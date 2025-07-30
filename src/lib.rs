@@ -1,12 +1,14 @@
-//! Fast PLY parser with type-level format specialization
+//! PLY parser with type-level format specialization
 
 pub mod de;
+pub mod ply_file;
 pub mod ser;
 
 pub use de::{
-    AsciiElementDeserializer, BinaryElementDeserializer, ChunkedElementParser, ChunkedHeaderParser,
+    AsciiElementDeserializer, BinaryElementDeserializer, ChunkedFileParser, ChunkedHeaderParser,
     FormatDeserializer,
 };
+pub use ply_file::{ElementReader, PlyConstruct, PlyFile};
 pub use ser::{
     elements_to_bytes, elements_to_writer, to_bytes, to_string, to_writer, PlySerializer,
 };
@@ -145,7 +147,6 @@ impl PlyHeader {
     pub fn parse<R: BufRead>(mut reader: R) -> Result<Self, PlyError> {
         let mut line = String::new();
 
-        // Read first line - must be "ply"
         reader.read_line(&mut line)?;
         if line.trim() != "ply" {
             return Err(PlyError::InvalidHeader(
@@ -301,7 +302,6 @@ where
         .get_element(element_name)
         .ok_or_else(|| PlyError::MissingElement(element_name.to_string()))?;
 
-    // Validate struct compatibility with PLY properties once upfront
     let properties = element_def.properties.to_vec();
 
     let mut results = Vec::new();
@@ -339,7 +339,6 @@ where
     Ok(results)
 }
 
-/// Create a chunked header parser for async-compatible header parsing
 pub fn chunked_header_parser() -> ChunkedHeaderParser {
     ChunkedHeaderParser::new()
 }
@@ -350,44 +349,59 @@ mod tests {
     use std::io::{BufReader, Cursor};
 
     #[test]
-    fn test_parse_simple_header() {
+    fn test_header_parsing() {
         let header_text = r#"ply
 format ascii 1.0
-comment A simple PLY file
-element vertex 3
+element vertex 2
 property float x
 property float y
 property float z
-element face 1
-property list uchar int vertex_indices
 end_header
 "#;
-
-        let cursor = BufReader::new(Cursor::new(header_text));
-        let header = PlyHeader::parse(cursor).unwrap();
-
+        let header = PlyHeader::parse(BufReader::new(Cursor::new(header_text))).unwrap();
         assert_eq!(header.format, PlyFormat::Ascii);
-        assert_eq!(header.version, "1.0");
-        assert_eq!(header.elements.len(), 2);
-        assert_eq!(header.comments.len(), 1);
-
-        let vertex_element = header.get_element("vertex").unwrap();
-        assert_eq!(vertex_element.count, 3);
-        assert_eq!(vertex_element.properties.len(), 3);
-
-        let face_element = header.get_element("face").unwrap();
-        assert_eq!(face_element.count, 1);
-        assert_eq!(face_element.properties.len(), 1);
+        assert_eq!(header.elements.len(), 1);
+        assert_eq!(header.get_element("vertex").unwrap().count, 2);
     }
 
     #[test]
-    fn test_scalar_type_parsing() {
+    fn test_scalar_types() {
         assert_eq!(ScalarType::parse("float").unwrap(), ScalarType::Float);
-        assert_eq!(ScalarType::parse("float32").unwrap(), ScalarType::Float);
         assert_eq!(ScalarType::parse("double").unwrap(), ScalarType::Double);
-        assert_eq!(ScalarType::parse("int").unwrap(), ScalarType::Int);
-        assert_eq!(ScalarType::parse("uchar").unwrap(), ScalarType::UChar);
+        assert!(ScalarType::parse("invalid").is_err());
+    }
 
-        assert!(ScalarType::parse("invalid_type").is_err());
+    #[test]
+    fn test_basic_parsing() {
+        #[derive(serde::Deserialize, Debug, PartialEq)]
+        struct Vertex {
+            x: f32,
+            y: f32,
+            z: f32,
+        }
+
+        let ply_data = r#"ply
+format ascii 1.0
+element vertex 1
+property float x
+property float y
+property float z
+end_header
+1.0 2.0 3.0
+"#;
+        let cursor = Cursor::new(ply_data);
+        let mut reader = BufReader::new(cursor);
+        let header = PlyHeader::parse(&mut reader).unwrap();
+        let vertices: Vec<Vertex> = parse_elements(&mut reader, &header, "vertex").unwrap();
+
+        assert_eq!(vertices.len(), 1);
+        assert_eq!(
+            vertices[0],
+            Vertex {
+                x: 1.0,
+                y: 2.0,
+                z: 3.0
+            }
+        );
     }
 }

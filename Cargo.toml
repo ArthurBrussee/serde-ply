@@ -18,7 +18,7 @@ path = "src/lib.rs"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
-thiserror = "1.0"
+thiserror = "2.0"
 byteorder = "1.4"
 
 [dev-dependencies]
@@ -30,6 +30,6 @@ default = []
 benchmarks = []
 
 [[bench]]
-name = "ply_parsing"
+name = "core_performance"
 harness = false
 required-features = ["benchmarks"]
