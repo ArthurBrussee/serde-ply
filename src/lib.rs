@@ -3,7 +3,10 @@
 pub mod de;
 pub mod ser;
 
-pub use de::{AsciiElementDeserializer, BinaryElementDeserializer, FormatDeserializer};
+pub use de::{
+    AsciiElementDeserializer, BinaryElementDeserializer, ChunkedElementParser, ChunkedHeaderParser,
+    FormatDeserializer,
+};
 pub use ser::{
     elements_to_bytes, elements_to_writer, to_bytes, to_string, to_writer, PlySerializer,
 };
@@ -334,6 +337,11 @@ where
     }
 
     Ok(results)
+}
+
+/// Create a chunked header parser for async-compatible header parsing
+pub fn chunked_header_parser() -> ChunkedHeaderParser {
+    ChunkedHeaderParser::new()
 }
 
 #[cfg(test)]

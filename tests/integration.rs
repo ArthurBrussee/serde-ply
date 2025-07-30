@@ -82,6 +82,337 @@ fn load_ply_file_bytes(filename: &str) -> Vec<u8> {
 }
 
 #[test]
+fn test_chunked_ascii_parsing() {
+    let ply_data = r#"ply
+format ascii 1.0
+element vertex 5
+property float x
+property float y
+property float z
+end_header
+1.0 2.0 3.0
+4.0 5.0 6.0
+7.0 8.0 9.0
+10.0 11.0 12.0
+13.0 14.0 15.0
+"#;
+
+    let cursor = Cursor::new(ply_data);
+    let mut reader = BufReader::new(cursor);
+    let header = PlyHeader::parse(&mut reader).unwrap();
+
+    // Create chunked parser without reader
+    // Read remaining data after header in chunks
+    let mut remaining_data = Vec::new();
+    std::io::Read::read_to_end(&mut reader, &mut remaining_data).unwrap();
+
+    // Create chunked header parser and simulate chunk parsing
+    let mut header_parser = serde_ply::chunked_header_parser();
+
+    // Feed header data to parser (simulate chunked header parsing)
+    let header_start = ply_data.find("ply").unwrap();
+    let header_end = ply_data.find("end_header\n").unwrap() + 11;
+    let header_data = &ply_data.as_bytes()[header_start..header_end];
+
+    header_parser.parse_from_bytes(header_data).unwrap();
+    let mut parser = header_parser.element_parser::<Vertex3D>("vertex").unwrap();
+
+    let mut all_vertices = Vec::new();
+    let mut chunk_count = 0;
+
+    // Process in small chunks to test chunking
+    let chunk_size = 32;
+    let mut pos = 0;
+
+    while pos < remaining_data.len() {
+        let end = std::cmp::min(pos + chunk_size, remaining_data.len());
+        let chunk = &remaining_data[pos..end];
+        pos = end;
+        chunk_count += 1;
+
+        if let Some(vertices) = parser.parse_from_bytes(chunk).unwrap() {
+            all_vertices.extend(vertices);
+        }
+
+        if parser.is_complete() {
+            break;
+        }
+    }
+
+    assert_eq!(all_vertices.len(), 5);
+    assert!(chunk_count > 1, "Should have processed multiple chunks");
+    assert_eq!(
+        all_vertices[0],
+        Vertex3D {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0
+        }
+    );
+    assert_eq!(
+        all_vertices[4],
+        Vertex3D {
+            x: 13.0,
+            y: 14.0,
+            z: 15.0
+        }
+    );
+}
+
+#[test]
+fn test_chunked_binary_parsing() {
+    let vertex_count = 1000;
+    let binary_data = generate_test_binary_ply(vertex_count);
+
+    let cursor = Cursor::new(binary_data);
+    let mut reader = BufReader::new(cursor);
+    let header = PlyHeader::parse(&mut reader).unwrap();
+
+    // Create chunked parser
+    // Read remaining data after header
+    let mut remaining_data = Vec::new();
+    std::io::Read::read_to_end(&mut reader, &mut remaining_data).unwrap();
+
+    // Create element parser from header
+    let mut header_parser = serde_ply::chunked_header_parser();
+
+    // Simulate header parsing (we already have the header)
+    let header_data = b"ply\nformat binary_little_endian 1.0\nelement vertex 1000\nproperty float x\nproperty float y\nproperty float z\nend_header\n";
+    header_parser.parse_from_bytes(header_data).unwrap();
+    let mut parser = header_parser.element_parser::<Vertex3D>("vertex").unwrap();
+
+    let mut all_vertices = Vec::new();
+    let mut chunk_count = 0;
+
+    // Process in 512 byte chunks
+    let chunk_size = 512;
+    let mut pos = 0;
+
+    while pos < remaining_data.len() {
+        let end = std::cmp::min(pos + chunk_size, remaining_data.len());
+        let chunk = &remaining_data[pos..end];
+        pos = end;
+        chunk_count += 1;
+
+        if let Some(vertices) = parser.parse_from_bytes(chunk).unwrap() {
+            all_vertices.extend(vertices);
+        }
+
+        if parser.is_complete() {
+            break;
+        }
+    }
+
+    assert_eq!(all_vertices.len(), vertex_count);
+    assert!(chunk_count > 1, "Should have processed multiple chunks");
+
+    // Verify first and last vertices
+    assert_eq!(
+        all_vertices[0],
+        Vertex3D {
+            x: 0.0,
+            y: 1.0,
+            z: 2.0
+        }
+    );
+    assert_eq!(
+        all_vertices[999],
+        Vertex3D {
+            x: 9.99,
+            y: 10.99,
+            z: 11.99
+        }
+    );
+}
+
+#[test]
+fn test_chunked_parser_progress_tracking() {
+    let ply_data = r#"ply
+format ascii 1.0
+element vertex 10
+property float x
+property float y
+property float z
+end_header
+0.0 0.0 0.0
+1.0 1.0 1.0
+2.0 2.0 2.0
+3.0 3.0 3.0
+4.0 4.0 4.0
+5.0 5.0 5.0
+6.0 6.0 6.0
+7.0 7.0 7.0
+8.0 8.0 8.0
+9.0 9.0 9.0
+"#;
+
+    let cursor = Cursor::new(ply_data);
+    let mut reader = BufReader::new(cursor);
+    let header = PlyHeader::parse(&mut reader).unwrap();
+
+    // Create element parser from header
+    let mut header_parser = serde_ply::chunked_header_parser();
+
+    // Simulate header parsing
+    let header_start = ply_data.find("ply").unwrap();
+    let header_end = ply_data.find("end_header\n").unwrap() + 11;
+    let header_data = &ply_data.as_bytes()[header_start..header_end];
+
+    header_parser.parse_from_bytes(header_data).unwrap();
+    let mut parser = header_parser.element_parser::<Vertex3D>("vertex").unwrap();
+
+    assert_eq!(parser.total_elements(), 10);
+    assert_eq!(parser.elements_parsed(), 0);
+    assert!(!parser.is_complete());
+
+    // Read remaining data after header
+    let mut remaining_data = Vec::new();
+    std::io::Read::read_to_end(&mut reader, &mut remaining_data).unwrap();
+
+    // Parse first chunk
+    let first_chunk = &remaining_data[0..64.min(remaining_data.len())];
+    let _vertices = parser.parse_from_bytes(first_chunk).unwrap();
+    assert!(parser.elements_parsed() >= 0);
+    assert!(parser.elements_parsed() <= 10);
+
+    // Continue with remaining data in chunks
+    let mut pos = 64;
+    while pos < remaining_data.len() {
+        let end = std::cmp::min(pos + 64, remaining_data.len());
+        let chunk = &remaining_data[pos..end];
+        pos = end;
+
+        parser.parse_from_bytes(chunk).unwrap();
+
+        if parser.is_complete() {
+            break;
+        }
+    }
+
+    assert_eq!(parser.elements_parsed(), 10);
+    assert!(parser.is_complete());
+}
+
+#[test]
+fn test_chunked_parser_empty_result_when_complete() {
+    let ply_data = r#"ply
+format ascii 1.0
+element vertex 2
+property float x
+property float y
+property float z
+end_header
+1.0 2.0 3.0
+4.0 5.0 6.0
+"#;
+
+    let cursor = Cursor::new(ply_data);
+    let mut reader = BufReader::new(cursor);
+    let header = PlyHeader::parse(&mut reader).unwrap();
+
+    // Read remaining data after header
+    let mut remaining_data = Vec::new();
+    std::io::Read::read_to_end(&mut reader, &mut remaining_data).unwrap();
+
+    // Create element parser from header
+    let mut header_parser = serde_ply::chunked_header_parser();
+
+    // Simulate header parsing
+    let header_start = ply_data.find("ply").unwrap();
+    let header_end = ply_data.find("end_header\n").unwrap() + 11;
+    let header_data = &ply_data.as_bytes()[header_start..header_end];
+
+    header_parser.parse_from_bytes(header_data).unwrap();
+    let mut parser = header_parser.element_parser::<Vertex3D>("vertex").unwrap();
+
+    // Parse all elements in one chunk
+    let vertices = parser.parse_from_bytes(&remaining_data).unwrap().unwrap();
+    assert_eq!(vertices.len(), 2);
+    assert!(parser.is_complete());
+
+    // Next call should return None
+    let result = parser.parse_from_bytes(&[]).unwrap();
+    assert!(result.is_none());
+}
+
+#[test]
+fn test_chunked_parsing_with_realistic_chunk_sizes() {
+    let vertex_count = 10_000;
+    let binary_data = generate_test_binary_ply(vertex_count);
+
+    let cursor = Cursor::new(binary_data);
+    let mut reader = BufReader::new(cursor);
+    let header = PlyHeader::parse(&mut reader).unwrap();
+
+    // Read remaining data after header
+    let mut remaining_data = Vec::new();
+    std::io::Read::read_to_end(&mut reader, &mut remaining_data).unwrap();
+
+    // Create element parser from header
+    let mut header_parser = serde_ply::chunked_header_parser();
+
+    // Simulate header parsing (we already have the header)
+    let header_data = b"ply\nformat binary_little_endian 1.0\nelement vertex 10000\nproperty float x\nproperty float y\nproperty float z\nend_header\n";
+    header_parser.parse_from_bytes(header_data).unwrap();
+    let mut parser = header_parser.element_parser::<Vertex3D>("vertex").unwrap();
+
+    let mut total_vertices = 0;
+    let mut chunk_count = 0;
+
+    // Use realistic 512KB chunk size
+    let chunk_size = 512 * 1024;
+    let mut pos = 0;
+
+    while pos < remaining_data.len() {
+        let end = std::cmp::min(pos + chunk_size, remaining_data.len());
+        let chunk = &remaining_data[pos..end];
+        pos = end;
+        chunk_count += 1;
+
+        if let Some(vertices) = parser.parse_from_bytes(chunk).unwrap() {
+            total_vertices += vertices.len();
+        }
+
+        if parser.is_complete() {
+            break;
+        }
+    }
+
+    assert_eq!(total_vertices, vertex_count);
+
+    // With 512KB chunks and 12 bytes per vertex, should need multiple chunks
+    let bytes_per_vertex = 12; // 3 floats
+    let vertices_per_chunk = chunk_size / bytes_per_vertex;
+    let expected_chunks = (vertex_count * bytes_per_vertex + chunk_size - 1) / chunk_size;
+    assert!(chunk_count >= expected_chunks);
+}
+
+fn generate_test_binary_ply(vertex_count: usize) -> Vec<u8> {
+    let header = format!(
+        r#"ply
+format binary_little_endian 1.0
+element vertex {}
+property float x
+property float y
+property float z
+end_header
+"#,
+        vertex_count
+    );
+
+    let mut binary_data = header.into_bytes();
+
+    for i in 0..vertex_count {
+        let base = i as f32 * 0.01;
+        binary_data.extend_from_slice(&base.to_le_bytes());
+        binary_data.extend_from_slice(&(base + 1.0).to_le_bytes());
+        binary_data.extend_from_slice(&(base + 2.0).to_le_bytes());
+    }
+
+    binary_data
+}
+
+#[test]
 fn test_greg_turk_cube() {
     let ply_data = load_ply_file("greg_turk_example1_ok_ascii.ply");
 

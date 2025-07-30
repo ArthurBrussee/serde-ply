@@ -76,6 +76,47 @@ let mut file = File::create("mesh.ply")?;
 serde_ply::elements_to_writer(&mut file, &header, &vertices)?;
 ```
 
+### Async Chunked Parsing
+```rust
+use serde_ply::chunked_header_parser;
+use tokio::io::AsyncReadExt;
+
+// Parse header from async source
+let mut header_parser = chunked_header_parser();
+loop {
+    let mut buffer = vec![0u8; 4096];
+    let bytes_read = async_reader.read(&mut buffer).await?;
+    buffer.truncate(bytes_read);
+    
+    if header_parser.parse_from_bytes(&buffer)?.is_some() {
+        break; // Header complete
+    }
+}
+
+// Create element parser from header (inherits leftover data automatically)
+let mut parser = header_parser.element_parser::<Vertex>("vertex")?;
+
+// The key async parsing loop
+loop {
+    // 1. Read chunk from async source
+    let mut buffer = vec![0u8; 4096];
+    let bytes_read = async_reader.read(&mut buffer).await?;
+    
+    if bytes_read == 0 { break; } // EOF
+    buffer.truncate(bytes_read);
+    
+    // 2. Parse elements from this chunk + any leftover data
+    if let Some(vertices) = parser.parse_from_bytes(&buffer)? {
+        process_vertices(vertices).await;
+    }
+    
+    // 3. Yield control to other async tasks
+    tokio::task::yield_now().await;
+    
+    if parser.is_complete() { break; }
+}
+```
+
 ## Implementation
 
 ### Core Insight: Advancing Reader Design
@@ -86,6 +127,14 @@ The API uses natural reader advancement through PLY data:
 3. **Type-safe parsing**: Validate struct fields match PLY properties (fail fast)
 4. **Format specialization**: Create format-specific deserializers per header
 5. **Zero runtime dispatch**: When serde calls `deserialize_f32()`, read f32 directly
+
+**Async Chunked Parsing Benefits:**
+- **True async integration**: Works with tokio AsyncRead, network streams, async files
+- **Memory efficient**: Process large files with constant memory usage (no full buffering)
+- **Seamless boundaries**: Header parser automatically transfers leftover data to element parser
+- **Progress tracking**: Built-in progress reporting for UI updates
+- **Format agnostic**: Works with ASCII (line boundaries) and binary (element boundaries)
+- **Network-friendly**: Handles variable chunk sizes from network streams
 
 **Type-Level Specialization Design:**
 The library uses Rust's type system to eliminate runtime format checking. Instead of:
@@ -151,6 +200,7 @@ Format decision happens once per element batch, not per field.
 - List properties fully supported in ASCII and binary
 - Complete round-trip serialization support
 - Full Serde field renaming and alias support
+- **Chunked parsing for async-like processing of large files**
 
 ## Implementation Details
 
@@ -175,6 +225,15 @@ Format decision happens once per element batch, not per field.
 - Zero intermediate allocations during read/write
 - Direct struct population from PLY data
 - Constant memory usage regardless of file size
+
+**Async Chunked Parsing Architecture**:
+- `ChunkedHeaderParser` parses headers from byte chunks, retains leftover data
+- `element_parser()` creates element parsers that inherit leftover data seamlessly
+- Binary formats: Calculate exact element sizes, buffer incomplete elements
+- ASCII formats: Buffer data until complete lines available, respect line boundaries  
+- State management: Maintains parsing state between async chunk reads
+- Progress tracking: Built-in progress reporting (`elements_parsed()`, `total_elements()`)
+- Boundary safety: Never parses incomplete elements, handles partial data correctly
 
 **Benchmarks**: Run `cargo bench --features benchmarks` to measure performance on your system.
 
