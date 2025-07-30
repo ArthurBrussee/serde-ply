@@ -1,0 +1,37 @@
+[package]
+name = "serde_ply"
+version = "0.1.0"
+edition = "2021"
+authors = ["Your Name <your.email@example.com>"]
+description = "A Serde-based PLY (Polygon File Format) serializer and deserializer"
+license = "MIT"
+repository = "https://github.com/yourusername/serde_ply"
+documentation = "https://docs.rs/serde_ply"
+keywords = ["ply", "polygon", "3d", "mesh", "serde"]
+categories = ["encoding", "graphics", "parser-implementations"]
+readme = "README.md"
+
+[lib]
+name = "serde_ply"
+path = "src/lib.rs"
+
+[[bin]]
+name = "serde_ply"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "1.0"
+byteorder = "1.4"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[features]
+default = []
+benchmarks = []
+
+[[bench]]
+name = "ply_parsing"
+harness = false
+required-features = ["benchmarks"]

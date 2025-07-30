@@ -1,0 +1,198 @@
+//! Basic usage example for serde_ply library
+//!
+//! This example demonstrates:
+//! 1. Parsing PLY headers to understand file structure
+//! 2. Reading individual elements by type
+//! 3. Working with different property types (scalar and list)
+//! 4. Creating PLY files programmatically
+
+use serde::{Deserialize, Serialize};
+use serde_ply::{ElementDef, PlyFormat, PlyHeader, PropertyType, ScalarType};
+use std::io::Cursor;
+
+#[derive(Deserialize, Serialize, Debug, PartialEq)]
+struct Vertex {
+    x: f32,
+    y: f32,
+    z: f32,
+    red: u8,
+    green: u8,
+    blue: u8,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+struct Face {
+    vertex_indices: Vec<i32>,
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("=== PLY Serde Example ===\n");
+
+    // Example PLY file content representing a simple triangle
+    let ply_data = r#"ply
+format ascii 1.0
+comment Created by serde_ply example
+comment This is a simple triangle mesh
+obj_info author John Doe
+element vertex 3
+property float x
+property float y
+property float z
+property uchar red
+property uchar green
+property uchar blue
+element face 1
+property list uchar int vertex_indices
+end_header
+0.0 0.0 0.0 255 0 0
+1.0 0.0 0.0 0 255 0
+0.5 1.0 0.0 0 0 255
+3 0 1 2
+"#;
+
+    // Step 1: Parse just the header to understand the file structure
+    println!("Step 1: Parsing PLY header...");
+    let cursor = Cursor::new(ply_data);
+    let (header, bytes_consumed) = PlyHeader::parse(cursor)?;
+
+    println!("✓ Header parsed successfully!");
+    println!("  Format: {}", header.format);
+    println!("  Version: {}", header.version);
+    println!("  Header size: {bytes_consumed} bytes");
+
+    if !header.comments.is_empty() {
+        println!("  Comments:");
+        for comment in &header.comments {
+            println!("    - {comment}");
+        }
+    }
+
+    if !header.obj_info.is_empty() {
+        println!("  Object Info:");
+        for info in &header.obj_info {
+            println!("    - {info}");
+        }
+    }
+
+    // Step 2: Analyze the elements and their properties
+    println!("\nStep 2: Analyzing elements...");
+    for element in &header.elements {
+        println!(
+            "  Element '{}' has {} instances:",
+            element.name, element.count
+        );
+
+        for property in &element.properties {
+            match property {
+                PropertyType::Scalar { data_type, name } => {
+                    println!("    - {name}: {data_type:?} (scalar)");
+                }
+                PropertyType::List {
+                    count_type,
+                    data_type,
+                    name,
+                } => {
+                    println!("    - {name}: list of {data_type:?} with {count_type:?} count");
+                }
+            }
+        }
+    }
+
+    // Step 3: Read vertices using struct deserialization (recommended approach)
+    println!("\nStep 3: Reading vertices using struct deserialization...");
+
+    let vertices: Vec<Vertex> = serde_ply::from_str(ply_data, "vertex")?;
+    println!("  Successfully read {} vertices:", vertices.len());
+
+    for (i, vertex) in vertices.iter().enumerate() {
+        println!("    Vertex {}: {:?}", i + 1, vertex);
+        println!("      Position: ({}, {}, {})", vertex.x, vertex.y, vertex.z);
+        println!(
+            "      Color: RGB({}, {}, {})",
+            vertex.red, vertex.green, vertex.blue
+        );
+    }
+
+    println!("\nStep 4: Reading with from_reader...");
+
+    let reader_vertices: Vec<Vertex> = serde_ply::from_reader(Cursor::new(ply_data), "vertex")?;
+    println!("  from_reader read {} vertices", reader_vertices.len());
+    println!("  Results match: {}", vertices == reader_vertices);
+
+    // Step 5: Demonstrate creating a new PLY header programmatically
+    println!("\nStep 5: Creating PLY header programmatically...");
+
+    let _new_header = PlyHeader {
+        format: PlyFormat::Ascii,
+        version: "1.0".to_string(),
+        elements: vec![
+            ElementDef {
+                name: "vertex".to_string(),
+                count: 4,
+                properties: vec![
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "x".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "y".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "z".to_string(),
+                    },
+                ],
+            },
+            ElementDef {
+                name: "face".to_string(),
+                count: 2,
+                properties: vec![PropertyType::List {
+                    count_type: ScalarType::UChar,
+                    data_type: ScalarType::Int,
+                    name: "vertex_list".to_string(),
+                }],
+            },
+        ],
+        comments: vec![
+            "Generated by serde_ply".to_string(),
+            "Square mesh example".to_string(),
+        ],
+        obj_info: vec!["Generated programmatically".to_string()],
+    };
+
+    println!("✓ Created header for a square mesh:");
+    println!("  - 4 vertices with x,y,z coordinates");
+    println!("  - 2 faces with vertex lists");
+    println!("  - Comments and object info included");
+
+    // Step 6: Show how different data types are handled
+    println!("\nStep 6: Supported data types:");
+    let supported_types = vec![
+        ("char/int8", ScalarType::Char),
+        ("uchar/uint8", ScalarType::UChar),
+        ("short/int16", ScalarType::Short),
+        ("ushort/uint16", ScalarType::UShort),
+        ("int/int32", ScalarType::Int),
+        ("uint/uint32", ScalarType::UInt),
+        ("float/float32", ScalarType::Float),
+        ("double/float64", ScalarType::Double),
+    ];
+
+    for (name, scalar_type) in supported_types {
+        println!("  - {}: {} bytes", name, scalar_type.size_bytes());
+    }
+
+    println!("\n=== Example completed successfully! ===");
+    println!("\nKey features demonstrated:");
+    println!("✓ Header-first parsing approach");
+    println!("✓ Struct-based deserialization (type-safe)");
+    println!("✓ Direct visitor pattern for performance");
+    println!("✓ Support for scalar and list properties");
+    println!("✓ Programmatic header creation");
+    println!("✓ Multiple data type support");
+
+    println!("\nNote: Multi-element reading (faces) will be implemented soon!");
+
+    Ok(())
+}
