@@ -16,7 +16,7 @@ pub struct PlySerializer<W> {
     writer: W,
     header: Option<PlyHeader>,
     format: PlyFormat,
-    element_count: usize,
+    current_field: usize,
 }
 
 impl<W: Write> PlySerializer<W> {
@@ -26,7 +26,7 @@ impl<W: Write> PlySerializer<W> {
             writer,
             header: None,
             format,
-            element_count: 0,
+            current_field: 0,
         }
     }
 
@@ -37,8 +37,31 @@ impl<W: Write> PlySerializer<W> {
             writer,
             header: Some(header),
             format,
-            element_count: 0,
+            current_field: 0,
         }
+    }
+
+    /// Serialize elements one by one for proper PLY format
+    pub fn serialize_elements<T>(&mut self, elements: &[T]) -> Result<(), PlyError>
+    where
+        T: Serialize,
+    {
+        // Write header if not already written
+        self.write_header()?;
+
+        for element in elements {
+            self.current_field = 0;
+            element.serialize(&mut *self)?;
+            match self.format {
+                PlyFormat::Ascii => {
+                    writeln!(self.writer)?;
+                }
+                PlyFormat::BinaryLittleEndian | PlyFormat::BinaryBigEndian => {
+                    // No newline for binary format
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Set the header for this serializer
@@ -103,7 +126,7 @@ impl<W: Write> PlySerializer<W> {
     fn write_scalar(&mut self, value: &PlyScalarValue) -> Result<(), PlyError> {
         match self.format {
             PlyFormat::Ascii => {
-                write!(self.writer, "{}", value)?;
+                write!(self.writer, "{value}")?;
                 Ok(())
             }
             PlyFormat::BinaryLittleEndian | PlyFormat::BinaryBigEndian => {
@@ -351,7 +374,7 @@ impl<W: Write> Serializer for &mut PlySerializer<W> {
         if let Some(len) = len {
             match self.format {
                 PlyFormat::Ascii => {
-                    write!(self.writer, "{} ", len)?;
+                    write!(self.writer, "{len} ")?;
                 }
                 PlyFormat::BinaryLittleEndian | PlyFormat::BinaryBigEndian => {
                     // Write count as uchar for lists (standard PLY convention)
@@ -385,10 +408,6 @@ impl<W: Write> Serializer for &mut PlySerializer<W> {
     }
 
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
-        // Write header if not already written
-        if self.header.is_some() && self.element_count == 0 {
-            self.write_header()?;
-        }
         Ok(self)
     }
 
@@ -411,7 +430,7 @@ impl<W: Write> Serializer for &mut PlySerializer<W> {
     }
 }
 
-impl<'a, W: Write> SerializeSeq for &'a mut PlySerializer<W> {
+impl<W: Write> SerializeSeq for &mut PlySerializer<W> {
     type Ok = ();
     type Error = PlyError;
 
@@ -419,6 +438,7 @@ impl<'a, W: Write> SerializeSeq for &'a mut PlySerializer<W> {
     where
         T: ?Sized + Serialize,
     {
+        value.serialize(&mut **self)?;
         match self.format {
             PlyFormat::Ascii => {
                 write!(self.writer, " ")?;
@@ -427,7 +447,7 @@ impl<'a, W: Write> SerializeSeq for &'a mut PlySerializer<W> {
                 // No separator needed for binary format
             }
         }
-        value.serialize(&mut **self)
+        Ok(())
     }
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
@@ -561,27 +581,24 @@ impl<W: Write> SerializeStruct for &mut PlySerializer<W> {
     where
         T: ?Sized + Serialize,
     {
-        value.serialize(&mut **self)?;
-        match self.format {
-            PlyFormat::Ascii => {
-                write!(self.writer, " ")?;
-            }
-            PlyFormat::BinaryLittleEndian | PlyFormat::BinaryBigEndian => {
-                // No separator needed for binary format
+        // Add space before field (except for first field)
+        if self.current_field > 0 {
+            match self.format {
+                PlyFormat::Ascii => {
+                    write!(self.writer, " ")?;
+                }
+                PlyFormat::BinaryLittleEndian | PlyFormat::BinaryBigEndian => {
+                    // No space separators in binary format
+                }
             }
         }
+        value.serialize(&mut **self)?;
+        self.current_field += 1;
         Ok(())
     }
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        match self.format {
-            PlyFormat::Ascii => {
-                writeln!(self.writer)?;
-            }
-            PlyFormat::BinaryLittleEndian | PlyFormat::BinaryBigEndian => {
-                // No newline needed for binary format
-            }
-        }
+        // No newline here - elements handle their own line separation
         Ok(())
     }
 }
@@ -626,17 +643,58 @@ where
     T: Serialize,
 {
     let mut serializer = PlySerializer::with_header(writer, header.clone());
+    serializer.write_header()?;
     value.serialize(&mut serializer)
 }
 
-/// Convenience function to serialize a value to a PLY string
+/// Convenience function to serialize elements to PLY format properly
+pub fn elements_to_writer<W, T>(
+    writer: W,
+    header: &PlyHeader,
+    elements: &[T],
+) -> Result<(), PlyError>
+where
+    W: Write,
+    T: Serialize,
+{
+    let mut serializer = PlySerializer::with_header(writer, header.clone());
+    serializer.serialize_elements(elements)
+}
+
+/// Convenience function to serialize elements to PLY bytes
+pub fn elements_to_bytes<T>(header: &PlyHeader, elements: &[T]) -> Result<Vec<u8>, PlyError>
+where
+    T: Serialize,
+{
+    let mut buffer = Vec::new();
+    elements_to_writer(&mut buffer, header, elements)?;
+    Ok(buffer)
+}
+
+/// Convenience function to serialize a value to a PLY string (ASCII format only)
 pub fn to_string<T>(header: &PlyHeader, value: &T) -> Result<String, PlyError>
+where
+    T: Serialize,
+{
+    if !matches!(header.format, PlyFormat::Ascii) {
+        return Err(PlyError::UnsupportedFormat(
+            "to_string only supports ASCII format - use to_bytes for binary formats".to_string(),
+        ));
+    }
+
+    let mut buffer = Vec::new();
+    to_writer(&mut buffer, header, value)?;
+    String::from_utf8(buffer).map_err(|e| PlyError::Serde(format!("UTF-8 encoding error: {e}")))
+}
+
+/// Convenience function to serialize a value to PLY bytes (works for all formats)
+pub fn to_bytes<T>(header: &PlyHeader, value: &T) -> Result<Vec<u8>, PlyError>
 where
     T: Serialize,
 {
     let mut buffer = Vec::new();
     to_writer(&mut buffer, header, value)?;
-    String::from_utf8(buffer).map_err(|e| PlyError::Serde(format!("UTF-8 encoding error: {e}")))
+    Ok(buffer)
 }
 
 #[cfg(test)]
@@ -650,6 +708,21 @@ mod tests {
         x: f32,
         y: f32,
         z: f32,
+    }
+
+    #[derive(Serialize)]
+    struct VertexWithColor {
+        x: f32,
+        y: f32,
+        z: f32,
+        red: u8,
+        green: u8,
+        blue: u8,
+    }
+
+    #[derive(Serialize)]
+    struct Face {
+        vertex_indices: Vec<u32>,
     }
 
     #[test]
@@ -715,5 +788,668 @@ mod tests {
         assert!(result.contains("element vertex 3"));
         assert!(result.contains("property float x"));
         assert!(result.contains("end_header"));
+    }
+
+    #[test]
+    fn test_binary_scalar_serialization() {
+        // Test f32
+        let mut buffer = Vec::new();
+        let mut serializer = PlySerializer::new(&mut buffer, PlyFormat::BinaryLittleEndian);
+        1.5f32.serialize(&mut serializer).unwrap();
+        assert_eq!(buffer, 1.5f32.to_le_bytes());
+
+        // Test u32
+        let mut buffer = Vec::new();
+        let mut serializer = PlySerializer::new(&mut buffer, PlyFormat::BinaryLittleEndian);
+        42u32.serialize(&mut serializer).unwrap();
+        assert_eq!(buffer, 42u32.to_le_bytes());
+
+        // Test u8
+        let mut buffer = Vec::new();
+        let mut serializer = PlySerializer::new(&mut buffer, PlyFormat::BinaryLittleEndian);
+        255u8.serialize(&mut serializer).unwrap();
+        assert_eq!(buffer, [255]);
+    }
+
+    #[test]
+    fn test_binary_vertex_serialization() {
+        let vertex = VertexWithColor {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+            red: 255,
+            green: 128,
+            blue: 0,
+        };
+
+        let mut buffer = Vec::new();
+        let mut serializer = PlySerializer::new(&mut buffer, PlyFormat::BinaryLittleEndian);
+
+        vertex.serialize(&mut serializer).unwrap();
+
+        let expected = [
+            1.0f32.to_le_bytes().as_ref(),
+            2.0f32.to_le_bytes().as_ref(),
+            3.0f32.to_le_bytes().as_ref(),
+            &[255u8],
+            &[128u8],
+            &[0u8],
+        ]
+        .concat();
+
+        assert_eq!(buffer, expected);
+    }
+
+    #[test]
+    fn test_binary_list_serialization() {
+        let face = Face {
+            vertex_indices: vec![0, 1, 2],
+        };
+
+        let mut buffer = Vec::new();
+        let mut serializer = PlySerializer::new(&mut buffer, PlyFormat::BinaryLittleEndian);
+
+        face.serialize(&mut serializer).unwrap();
+
+        let expected = [
+            &[3u8], // count
+            0u32.to_le_bytes().as_ref(),
+            1u32.to_le_bytes().as_ref(),
+            2u32.to_le_bytes().as_ref(),
+        ]
+        .concat();
+
+        assert_eq!(buffer, expected);
+    }
+
+    #[test]
+    fn test_complete_binary_ply_file() {
+        let vertices = vec![
+            VertexWithColor {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                red: 255,
+                green: 0,
+                blue: 0,
+            },
+            VertexWithColor {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+                red: 0,
+                green: 255,
+                blue: 0,
+            },
+            VertexWithColor {
+                x: 0.5,
+                y: 1.0,
+                z: 0.0,
+                red: 0,
+                green: 0,
+                blue: 255,
+            },
+        ];
+
+        let header = PlyHeader {
+            format: PlyFormat::BinaryLittleEndian,
+            version: "1.0".to_string(),
+            elements: vec![ElementDef {
+                name: "vertex".to_string(),
+                count: vertices.len(),
+                properties: vec![
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "x".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "y".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "z".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::UChar,
+                        name: "red".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::UChar,
+                        name: "green".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::UChar,
+                        name: "blue".to_string(),
+                    },
+                ],
+            }],
+            comments: vec![],
+            obj_info: vec![],
+        };
+
+        let result = to_bytes(&header, &vertices);
+
+        // This should work now with proper binary support
+        match result {
+            Ok(ply_bytes) => {
+                println!("Binary PLY serialization succeeded");
+                // Convert just the header portion to string to verify
+                let header_str = String::from_utf8_lossy(&ply_bytes[..200]); // First 200 bytes should be header
+                assert!(header_str.contains("format binary_little_endian 1.0"));
+                assert!(header_str.contains("end_header"));
+
+                // Verify we have the expected total size
+                // Header + 3 vertices * (3 floats + 3 bytes) = header + 3 * 15 = header + 45 bytes
+                assert!(ply_bytes.len() > 45);
+            }
+            Err(e) => {
+                panic!("Binary serialization failed: {e}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_ascii_still_works_with_to_string() {
+        let vertices = vec![
+            VertexWithColor {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                red: 255,
+                green: 0,
+                blue: 0,
+            },
+            VertexWithColor {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+                red: 0,
+                green: 255,
+                blue: 0,
+            },
+        ];
+
+        let header = PlyHeader {
+            format: PlyFormat::Ascii,
+            version: "1.0".to_string(),
+            elements: vec![ElementDef {
+                name: "vertex".to_string(),
+                count: vertices.len(),
+                properties: vec![
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "x".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "y".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "z".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::UChar,
+                        name: "red".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::UChar,
+                        name: "green".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::UChar,
+                        name: "blue".to_string(),
+                    },
+                ],
+            }],
+            comments: vec![],
+            obj_info: vec![],
+        };
+
+        let result = to_string(&header, &vertices).unwrap();
+
+        // Verify header
+        assert!(result.contains("format ascii 1.0"));
+        assert!(result.contains("end_header"));
+
+        // Verify data (should be space-separated)
+        assert!(result.contains("0 0 0 255 0 0"));
+        assert!(result.contains("1 0 0 0 255 0"));
+    }
+
+    #[test]
+    fn test_to_string_rejects_binary_format() {
+        let vertex = Vertex {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+        };
+
+        let header = PlyHeader {
+            format: PlyFormat::BinaryLittleEndian,
+            version: "1.0".to_string(),
+            elements: vec![],
+            comments: vec![],
+            obj_info: vec![],
+        };
+
+        let result = to_string(&header, &vertex);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("to_string only supports ASCII format"));
+    }
+
+    #[test]
+    fn test_binary_round_trip() {
+        use crate::parse_elements;
+        use std::io::Cursor;
+
+        #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+        struct RoundTripVertex {
+            x: f32,
+            y: f32,
+            z: f32,
+            red: u8,
+            green: u8,
+            blue: u8,
+        }
+
+        let original_vertices = vec![
+            RoundTripVertex {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                red: 255,
+                green: 0,
+                blue: 0,
+            },
+            RoundTripVertex {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+                red: 0,
+                green: 255,
+                blue: 0,
+            },
+            RoundTripVertex {
+                x: 0.5,
+                y: 1.0,
+                z: 0.0,
+                red: 0,
+                green: 0,
+                blue: 255,
+            },
+        ];
+
+        let header = PlyHeader {
+            format: PlyFormat::BinaryLittleEndian,
+            version: "1.0".to_string(),
+            elements: vec![ElementDef {
+                name: "vertex".to_string(),
+                count: original_vertices.len(),
+                properties: vec![
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "x".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "y".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "z".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::UChar,
+                        name: "red".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::UChar,
+                        name: "green".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::UChar,
+                        name: "blue".to_string(),
+                    },
+                ],
+            }],
+            comments: vec![],
+            obj_info: vec![],
+        };
+
+        // Serialize to binary using proper elements API
+        let ply_bytes = elements_to_bytes(&header, &original_vertices).unwrap();
+
+        // Deserialize back
+        let cursor = Cursor::new(ply_bytes);
+        let mut reader = std::io::BufReader::new(cursor);
+        let header = crate::PlyHeader::parse(&mut reader).unwrap();
+        let deserialized_vertices: Vec<RoundTripVertex> =
+            parse_elements(&mut reader, &header, "vertex").unwrap();
+
+        // Verify they match
+        assert_eq!(original_vertices.len(), deserialized_vertices.len());
+        for (original, deserialized) in original_vertices.iter().zip(deserialized_vertices.iter()) {
+            assert_eq!(original, deserialized);
+        }
+    }
+
+    #[test]
+    fn test_debug_binary_output() {
+        let vertex = VertexWithColor {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+            red: 255,
+            green: 128,
+            blue: 0,
+        };
+
+        let header = PlyHeader {
+            format: PlyFormat::BinaryLittleEndian,
+            version: "1.0".to_string(),
+            elements: vec![ElementDef {
+                name: "vertex".to_string(),
+                count: 1,
+                properties: vec![
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "x".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "y".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "z".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::UChar,
+                        name: "red".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::UChar,
+                        name: "green".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::UChar,
+                        name: "blue".to_string(),
+                    },
+                ],
+            }],
+            comments: vec![],
+            obj_info: vec![],
+        };
+
+        let ply_bytes = to_bytes(&header, &vertex).unwrap();
+
+        // Find where header ends
+        let header_end = ply_bytes
+            .windows(11)
+            .position(|w| w == b"end_header\n")
+            .unwrap()
+            + 11;
+
+        println!("Header ends at byte {header_end}");
+        println!("Total bytes: {}", ply_bytes.len());
+        println!("Data portion: {:?}", &ply_bytes[header_end..]);
+
+        // Expected data: 1.0f32, 2.0f32, 3.0f32, 255u8, 128u8, 0u8
+        let expected = [
+            1.0f32.to_le_bytes().as_ref(),
+            2.0f32.to_le_bytes().as_ref(),
+            3.0f32.to_le_bytes().as_ref(),
+            &[255u8],
+            &[128u8],
+            &[0u8],
+        ]
+        .concat();
+
+        println!("Expected data: {expected:?}");
+        assert_eq!(&ply_bytes[header_end..], expected);
+    }
+
+    #[test]
+    #[allow(dead_code)]
+    fn test_debug_array_vs_single() {
+        let single_vertex = VertexWithColor {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            red: 255,
+            green: 0,
+            blue: 0,
+        };
+
+        let vertex_array = vec![VertexWithColor {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            red: 255,
+            green: 0,
+            blue: 0,
+        }];
+
+        let header = PlyHeader {
+            format: PlyFormat::BinaryLittleEndian,
+            version: "1.0".to_string(),
+            elements: vec![ElementDef {
+                name: "vertex".to_string(),
+                count: 1,
+                properties: vec![
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "x".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "y".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "z".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::UChar,
+                        name: "red".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::UChar,
+                        name: "green".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::UChar,
+                        name: "blue".to_string(),
+                    },
+                ],
+            }],
+            comments: vec![],
+            obj_info: vec![],
+        };
+
+        let single_bytes = to_bytes(&header, &single_vertex).unwrap();
+        let array_bytes = to_bytes(&header, &vertex_array).unwrap();
+
+        println!("Single vertex bytes: {}", single_bytes.len());
+        println!("Array bytes: {}", array_bytes.len());
+
+        // Find data portions
+        let single_header_end = single_bytes
+            .windows(11)
+            .position(|w| w == b"end_header\n")
+            .unwrap()
+            + 11;
+        let array_header_end = array_bytes
+            .windows(11)
+            .position(|w| w == b"end_header\n")
+            .unwrap()
+            + 11;
+
+        println!("Single data: {:?}", &single_bytes[single_header_end..]);
+        println!("Array data: {:?}", &array_bytes[array_header_end..]);
+    }
+
+    #[test]
+    fn test_simple_ascii_output() {
+        let vertex = VertexWithColor {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+            red: 255,
+            green: 128,
+            blue: 0,
+        };
+
+        let header = PlyHeader {
+            format: PlyFormat::Ascii,
+            version: "1.0".to_string(),
+            elements: vec![ElementDef {
+                name: "vertex".to_string(),
+                count: 1,
+                properties: vec![
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "x".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "y".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "z".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::UChar,
+                        name: "red".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::UChar,
+                        name: "green".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::UChar,
+                        name: "blue".to_string(),
+                    },
+                ],
+            }],
+            comments: vec![],
+            obj_info: vec![],
+        };
+
+        let vertices = vec![vertex];
+        let ply_bytes = elements_to_bytes(&header, &vertices).unwrap();
+        let ply_str = String::from_utf8(ply_bytes).unwrap();
+
+        println!("ASCII output:\n{ply_str}");
+
+        // Verify it contains the header
+        assert!(ply_str.contains("format ascii 1.0"));
+        assert!(ply_str.contains("end_header"));
+
+        // Verify it contains our vertex data
+        assert!(ply_str.contains("1 2 3 255 128 0"));
+    }
+
+    #[test]
+    fn test_ascii_round_trip() {
+        use crate::parse_elements;
+        use std::io::Cursor;
+
+        #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+        struct RoundTripVertex {
+            x: f32,
+            y: f32,
+            z: f32,
+            red: u8,
+            green: u8,
+            blue: u8,
+        }
+
+        let original_vertices = vec![
+            RoundTripVertex {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                red: 255,
+                green: 0,
+                blue: 0,
+            },
+            RoundTripVertex {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+                red: 0,
+                green: 255,
+                blue: 0,
+            },
+            RoundTripVertex {
+                x: 0.5,
+                y: 1.0,
+                z: 0.0,
+                red: 0,
+                green: 0,
+                blue: 255,
+            },
+        ];
+
+        let header = PlyHeader {
+            format: PlyFormat::Ascii,
+            version: "1.0".to_string(),
+            elements: vec![ElementDef {
+                name: "vertex".to_string(),
+                count: original_vertices.len(),
+                properties: vec![
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "x".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "y".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::Float,
+                        name: "z".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::UChar,
+                        name: "red".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::UChar,
+                        name: "green".to_string(),
+                    },
+                    PropertyType::Scalar {
+                        data_type: ScalarType::UChar,
+                        name: "blue".to_string(),
+                    },
+                ],
+            }],
+            comments: vec![],
+            obj_info: vec![],
+        };
+
+        // Serialize to ASCII using proper elements API
+        let ply_bytes = elements_to_bytes(&header, &original_vertices).unwrap();
+        let ply_str = String::from_utf8(ply_bytes).unwrap();
+
+        // Deserialize back
+        let cursor = Cursor::new(ply_str.as_bytes());
+        let mut reader = std::io::BufReader::new(cursor);
+        let header = crate::PlyHeader::parse(&mut reader).unwrap();
+        let deserialized_vertices: Vec<RoundTripVertex> =
+            parse_elements(&mut reader, &header, "vertex").unwrap();
+
+        // Verify they match
+        assert_eq!(original_vertices.len(), deserialized_vertices.len());
+        for (original, deserialized) in original_vertices.iter().zip(deserialized_vertices.iter()) {
+            assert_eq!(original, deserialized);
+        }
     }
 }

@@ -1,0 +1,60 @@
+# Coding Style Preferences
+
+## General Principles
+- Concise code over verbose explanations
+- Grounded engineering approach, no hype or over-optimization
+- Performance matters but measure before optimizing
+- Type safety and compile-time guarantees preferred
+- Minimal dependencies, understand what you include
+
+## Comments
+- Sparingly used, only where absolutely necessary
+- No play-by-play commentary ("did X here", "now we do Y")
+- Focus on why, not what (code should be self-documenting)
+- Remove TODO comments that are no longer relevant
+- Avoid excessive documentation for internal APIs
+
+## Code Structure
+- Prefer type-level solutions over runtime checks
+- Eliminate runtime dispatch where possible
+- Use generics and trait bounds for zero-cost abstractions
+- Validate once, trust thereafter
+- Short functions, clear single responsibilities
+
+## Error Handling
+- Use thiserror for clear error types
+- Fail fast with meaningful messages
+- Don't ignore or swallow errors
+- Context is more valuable than stack traces
+
+## Performance
+- Measure before claiming performance benefits
+- Use proper benchmarks (criterion), not debug mode tests
+- Optimize for the common case
+- Eliminate allocations on hot paths
+- Profile actual bottlenecks, not assumed ones
+
+## Testing
+- Integration tests over unit tests
+- Test with real data when possible
+- Benchmarks should run quickly (<10s)
+- Don't test every edge case if integration covers it
+
+## API Design
+- Fewer functions that do more
+- Consistent naming patterns
+- Leverage existing ecosystem (serde, byteorder)
+- Make the simple case simple, complex case possible
+- Document performance characteristics, not just usage
+
+## Dependencies
+- Minimize external dependencies
+- Prefer well-maintained, focused crates
+- Understand the performance implications
+- Don't reinvent wheels that are already round
+
+## Documentation
+- README for developers, not marketing
+- Focus on architecture decisions and gotchas
+- Performance characteristics over feature lists
+- Practical examples over contrived ones

@@ -1,55 +1,18 @@
-//! A Serde-based PLY (Polygon File Format) serializer and deserializer.
-//!
-//! This crate provides a custom Serde data format for reading and writing PLY files.
-//! PLY files have a variable header structure that defines the data format, so we
-//! parse the header first and use that information to guide deserialization.
-//!
-//! # Example
-//!
-//! ```rust
-//! use serde::Deserialize;
-//! use serde_ply::PlyHeader;
-//!
-//! #[derive(Deserialize, Debug)]
-//! struct Vertex {
-//!     x: f32,
-//!     y: f32,
-//!     z: f32,
-//! }
-//!
-//! let ply_data = r#"ply
-//! format ascii 1.0
-//! element vertex 1
-//! property float x
-//! property float y
-//! property float z
-//! end_header
-//! 1.0 2.0 3.0
-//! "#;
-//!
-//! // Parse header to inspect structure
-//! let (header, _) = PlyHeader::parse(ply_data.as_bytes()).unwrap();
-//! println!("Found {} vertices", header.get_element("vertex").unwrap().count);
-//!
-//! // Deserialize directly to structs
-//! let vertices: Vec<Vertex> = serde_ply::from_str(ply_data, "vertex").unwrap();
-//! println!("First vertex: {:?}", vertices[0]);
-//! ```
+//! Fast PLY parser with type-level format specialization
 
 pub mod de;
 pub mod ser;
 
-pub use ser::{to_string, to_writer, PlySerializer};
-
-// Element deserialization
-pub use de::ElementDeserializer;
+pub use de::{AsciiElementDeserializer, BinaryElementDeserializer, FormatDeserializer};
+pub use ser::{
+    elements_to_bytes, elements_to_writer, to_bytes, to_string, to_writer, PlySerializer,
+};
 
 use std::fmt;
-use std::io::{BufRead, BufReader, Read};
+use std::io::BufRead;
 use std::str::FromStr;
 use thiserror::Error;
 
-/// Errors that can occur during PLY parsing or serialization
 #[derive(Error, Debug)]
 pub enum PlyError {
     #[error("IO error: {0}")]
@@ -83,7 +46,6 @@ impl serde::ser::Error for PlyError {
     }
 }
 
-/// PLY file format (ascii or binary)
 #[derive(Debug, Clone, PartialEq)]
 pub enum PlyFormat {
     Ascii,
@@ -101,7 +63,6 @@ impl fmt::Display for PlyFormat {
     }
 }
 
-/// PLY scalar data types
 #[derive(Debug, Clone, PartialEq)]
 pub enum ScalarType {
     Char,
@@ -149,7 +110,6 @@ impl FromStr for ScalarType {
     }
 }
 
-/// PLY property definition
 #[derive(Debug, Clone)]
 pub enum PropertyType {
     /// A scalar property with a single value
@@ -162,7 +122,6 @@ pub enum PropertyType {
     },
 }
 
-/// PLY element definition (e.g., vertex, face)
 #[derive(Debug, Clone)]
 pub struct ElementDef {
     pub name: String,
@@ -170,7 +129,6 @@ pub struct ElementDef {
     pub properties: Vec<PropertyType>,
 }
 
-/// PLY header containing format information and element definitions
 #[derive(Debug, Clone)]
 pub struct PlyHeader {
     pub format: PlyFormat,
@@ -181,14 +139,11 @@ pub struct PlyHeader {
 }
 
 impl PlyHeader {
-    /// Parse a PLY header from a reader
-    pub fn parse<R: Read>(reader: R) -> Result<(Self, usize), PlyError> {
-        let mut buf_reader = BufReader::new(reader);
+    pub fn parse<R: BufRead>(mut reader: R) -> Result<Self, PlyError> {
         let mut line = String::new();
-        let mut bytes_read = 0;
 
-        // Read the first line - should be "ply"
-        bytes_read += buf_reader.read_line(&mut line)?;
+        // Read first line - must be "ply"
+        reader.read_line(&mut line)?;
         if line.trim() != "ply" {
             return Err(PlyError::InvalidHeader(
                 "File must start with 'ply'".to_string(),
@@ -204,24 +159,23 @@ impl PlyHeader {
 
         loop {
             line.clear();
-            let line_bytes = buf_reader.read_line(&mut line)?;
-            if line_bytes == 0 {
+            let bytes_read = reader.read_line(&mut line)?;
+            if bytes_read == 0 {
                 return Err(PlyError::InvalidHeader(
                     "Unexpected end of file".to_string(),
                 ));
             }
-            bytes_read += line_bytes;
 
-            let line = line.trim();
-            if line.is_empty() {
+            let line_content = line.trim();
+            if line_content.is_empty() {
                 continue;
             }
 
-            if line == "end_header" {
+            if line_content == "end_header" {
                 break;
             }
 
-            let parts: Vec<&str> = line.split_whitespace().collect();
+            let parts: Vec<&str> = line_content.split_whitespace().collect();
             if parts.is_empty() {
                 continue;
             }
@@ -250,7 +204,6 @@ impl PlyHeader {
                         return Err(PlyError::InvalidHeader("Invalid element line".to_string()));
                     }
 
-                    // Save previous element if any
                     if let Some(element) = current_element.take() {
                         elements.push(element);
                     }
@@ -292,7 +245,6 @@ impl PlyHeader {
                             name,
                         });
                     } else {
-                        // Scalar property: property <type> <name>
                         let data_type = ScalarType::parse(parts[1])?;
                         let name = parts[2].to_string();
 
@@ -302,13 +254,11 @@ impl PlyHeader {
                     }
                 }
                 _ => {
-                    // Unknown header line - could be a comment or extension
-                    comments.push(line.to_string());
+                    comments.push(line_content.to_string());
                 }
             }
         }
 
-        // Save the last element
         if let Some(element) = current_element {
             elements.push(element);
         }
@@ -316,33 +266,80 @@ impl PlyHeader {
         let format = format
             .ok_or_else(|| PlyError::InvalidHeader("Missing format specification".to_string()))?;
 
-        Ok((
-            PlyHeader {
-                format,
-                version,
-                elements,
-                comments,
-                obj_info,
-            },
-            bytes_read,
-        ))
+        Ok(PlyHeader {
+            format,
+            version,
+            elements,
+            comments,
+            obj_info,
+        })
     }
 
-    /// Get element definition by name
     pub fn get_element(&self, name: &str) -> Option<&ElementDef> {
         self.elements.iter().find(|e| e.name == name)
     }
 
-    /// Check if this header defines an element with the given name
     pub fn has_element(&self, name: &str) -> bool {
         self.elements.iter().any(|e| e.name == name)
     }
 }
 
+/// Parse elements from a reader after the header has been parsed
+pub fn parse_elements<R, T>(
+    reader: R,
+    header: &PlyHeader,
+    element_name: &str,
+) -> Result<Vec<T>, PlyError>
+where
+    R: BufRead,
+    T: for<'de> serde::Deserialize<'de>,
+{
+    let element_def = header
+        .get_element(element_name)
+        .ok_or_else(|| PlyError::MissingElement(element_name.to_string()))?;
+
+    // Validate struct compatibility with PLY properties once upfront
+    let properties = element_def.properties.to_vec();
+
+    let mut results = Vec::new();
+
+    match header.format {
+        PlyFormat::Ascii => {
+            let mut deserializer =
+                AsciiElementDeserializer::new(reader, element_def.count, properties);
+            while let Some(element) = deserializer.next_element::<T>()? {
+                results.push(element);
+            }
+        }
+        PlyFormat::BinaryLittleEndian => {
+            let mut deserializer = BinaryElementDeserializer::<_, byteorder::LittleEndian>::new(
+                reader,
+                element_def.count,
+                properties,
+            );
+            while let Some(element) = deserializer.next_element::<T>()? {
+                results.push(element);
+            }
+        }
+        PlyFormat::BinaryBigEndian => {
+            let mut deserializer = BinaryElementDeserializer::<_, byteorder::BigEndian>::new(
+                reader,
+                element_def.count,
+                properties,
+            );
+            while let Some(element) = deserializer.next_element::<T>()? {
+                results.push(element);
+            }
+        }
+    }
+
+    Ok(results)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
+    use std::io::{BufReader, Cursor};
 
     #[test]
     fn test_parse_simple_header() {
@@ -358,8 +355,8 @@ property list uchar int vertex_indices
 end_header
 "#;
 
-        let cursor = Cursor::new(header_text);
-        let (header, _) = PlyHeader::parse(cursor).unwrap();
+        let cursor = BufReader::new(Cursor::new(header_text));
+        let header = PlyHeader::parse(cursor).unwrap();
 
         assert_eq!(header.format, PlyFormat::Ascii);
         assert_eq!(header.version, "1.0");
@@ -385,86 +382,4 @@ end_header
 
         assert!(ScalarType::parse("invalid_type").is_err());
     }
-}
-
-/// Parse header and find data start position
-fn parse_header_and_data(mut reader: impl Read) -> Result<(PlyHeader, Vec<u8>), PlyError> {
-    // Read all data first
-    let mut buffer = Vec::new();
-    reader.read_to_end(&mut buffer)?;
-
-    // Find header end position - handle different line endings
-    let mut header_end = 0;
-    for i in 0..buffer.len().saturating_sub(12) {
-        if buffer[i..].starts_with(b"end_header\r\n") {
-            header_end = i + 12;
-            break;
-        } else if buffer[i..].starts_with(b"end_header\n") {
-            header_end = i + 11;
-            break;
-        }
-    }
-
-    if header_end == 0 {
-        return Err(PlyError::InvalidHeader("No end_header found".to_string()));
-    }
-
-    // Parse header from UTF-8
-    let header_bytes = &buffer[..header_end];
-    let header_string = String::from_utf8(header_bytes.to_vec())
-        .map_err(|e| PlyError::Serde(format!("Invalid UTF-8 in header: {}", e)))?;
-
-    let cursor = std::io::Cursor::new(&header_string);
-    let (header, _) = PlyHeader::parse(cursor)?;
-
-    // Get data portion
-    let data_portion = buffer[header_end..].to_vec();
-    Ok((header, data_portion))
-}
-
-/// Deserialize elements from a reader
-pub fn from_reader<R, T>(reader: R, element_name: &str) -> Result<Vec<T>, PlyError>
-where
-    R: Read,
-    T: for<'de> serde::Deserialize<'de>,
-{
-    let (header, data) = parse_header_and_data(reader)?;
-    let data_reader = std::io::Cursor::new(data);
-
-    let mut deserializer = ElementDeserializer::new(data_reader, &header, element_name)?;
-    let mut results = Vec::new();
-
-    while let Some(element) = deserializer.next_element::<T>()? {
-        results.push(element);
-    }
-
-    Ok(results)
-}
-
-/// Convenience function for deserializing from a string
-pub fn from_str<T>(ply_str: &str, element_name: &str) -> Result<Vec<T>, PlyError>
-where
-    T: for<'de> serde::Deserialize<'de>,
-{
-    from_reader(std::io::Cursor::new(ply_str), element_name)
-}
-
-/// Deserialize elements with explicit header (useful when header is already parsed)
-pub fn deserialize_elements<R, T>(
-    reader: R,
-    header: &PlyHeader,
-    element_name: &str,
-) -> Result<Vec<T>, PlyError>
-where
-    R: Read,
-    T: for<'de> serde::Deserialize<'de>,
-{
-    let mut deserializer = ElementDeserializer::new(reader, header, element_name)?;
-    let mut results = Vec::new();
-
-    while let Some(element) = deserializer.next_element::<T>()? {
-        results.push(element);
-    }
-
-    Ok(results)
 }
