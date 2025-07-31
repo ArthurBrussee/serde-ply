@@ -1,11 +1,10 @@
-//! Example showing the new unified PlyFile API
+//! Example showing the unified PlyFile API
 
 use serde::{Deserialize, Serialize};
-use serde_ply::{PlyConstruct, PlyFile};
-use std::io::{BufReader, Cursor};
+use serde_ply::{PlyError, PlyFile};
 
 #[derive(Deserialize, Serialize, Debug, PartialEq)]
-struct Vertex {
+struct ColorVertex {
     x: f32,
     y: f32,
     z: f32,
@@ -14,31 +13,66 @@ struct Vertex {
     blue: u8,
 }
 
+#[derive(Deserialize, Debug, PartialEq)]
+struct Vertex {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
 #[derive(Deserialize, Debug)]
 struct Face {
     vertex_indices: Vec<u32>,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), PlyError> {
     println!("=== Unified PLY File API Examples ===\n");
 
-    // Example 1: Load from complete data
-    example_from_bytes()?;
-
-    // Example 2: Load from reader (streaming)
-    example_from_reader()?;
-
-    // Example 3: Build from chunks (async-like)
-    example_from_chunks()?;
-
-    // Example 4: Streaming element reader
-    example_streaming_reader()?;
+    example_complete_data()?;
+    example_chunked_loading()?;
+    example_multi_element()?;
 
     Ok(())
 }
 
-fn example_from_bytes() -> Result<(), Box<dyn std::error::Error>> {
-    println!("--- Example 1: PlyFile from construct ---");
+fn example_complete_data() -> Result<(), PlyError> {
+    println!("--- Loading from complete data ---");
+
+    let ply_data = r#"ply
+format ascii 1.0
+element vertex 2
+property float x
+property float y
+property float z
+property uchar red
+property uchar green
+property uchar blue
+end_header
+0.0 0.0 0.0 255 0 0
+1.0 1.0 1.0 0 255 0
+"#;
+
+    let mut ply_file = PlyFile::new();
+    ply_file.feed_data(ply_data.as_bytes());
+
+    let mut vertex_reader = ply_file.element_reader()?;
+    let mut vertices = Vec::new();
+
+    while let Some(chunk) = vertex_reader.next_chunk::<ColorVertex>(&mut ply_file)? {
+        vertices.extend(chunk);
+    }
+
+    println!("Loaded {} vertices:", vertices.len());
+    for vertex in &vertices {
+        println!("  {:?}", vertex);
+    }
+    println!();
+
+    Ok(())
+}
+
+fn example_chunked_loading() -> Result<(), PlyError> {
+    println!("--- Chunked loading simulation ---");
 
     let ply_data = r#"ply
 format ascii 1.0
@@ -52,167 +86,97 @@ property uchar blue
 end_header
 0.0 0.0 0.0 255 0 0
 1.0 0.0 0.0 0 255 0
-0.5 1.0 0.0 0 0 255
+0.0 1.0 0.0 0 0 255
 "#;
 
-    // Load PLY file from data using construct (no from_bytes)
-    let mut construct = PlyConstruct::new();
-    construct.add_chunk(ply_data.as_bytes())?;
-    let mut ply_file = construct.finalize()?;
+    let mut ply_file = PlyFile::new();
+    let chunks: Vec<&[u8]> = ply_data.as_bytes().chunks(30).collect();
+    let mut chunk_iter = chunks.iter();
 
-    // Read any element type - same API for all
-    let vertices: Vec<Vertex> = ply_file.read_elements("vertex")?;
-
-    println!("Loaded {} vertices", vertices.len());
-    println!("First vertex: {:?}\n", vertices[0]);
-
-    Ok(())
-}
-
-fn example_from_reader() -> Result<(), Box<dyn std::error::Error>> {
-    println!("--- Example 2: PlyFile::from_reader ---");
-
-    let ply_data = r#"ply
-format ascii 1.0
-element vertex 2
-property float x
-property float y
-property float z
-property uchar red
-property uchar green
-property uchar blue
-end_header
-1.0 2.0 3.0 128 128 128
-4.0 5.0 6.0 255 255 255
-"#;
-
-    // Load from any reader
-    let cursor = Cursor::new(ply_data);
-    let reader = BufReader::new(cursor);
-    let mut ply_file = PlyFile::from_reader(reader)?;
-
-    println!("Header format: {:?}", ply_file.header().format);
-
-    // Same read_elements API
-    let vertices: Vec<Vertex> = ply_file.read_elements("vertex")?;
-    println!("Read {} vertices from stream\n", vertices.len());
-
-    Ok(())
-}
-
-fn example_from_chunks() -> Result<(), Box<dyn std::error::Error>> {
-    println!("--- Example 3: Building from chunks ---");
-
-    let ply_data = r#"ply
-format ascii 1.0
-element vertex 4
-property float x
-property float y
-property float z
-property uchar red
-property uchar green
-property uchar blue
-end_header
-1.0 0.0 0.0 255 0 0
-0.0 1.0 0.0 0 255 0
-0.0 0.0 1.0 0 0 255
-1.0 1.0 1.0 128 128 128
-"#;
-
-    // Simulate receiving data in chunks (like from network)
-    let mut construct = PlyConstruct::new();
-
-    let bytes = ply_data.as_bytes();
-    let chunk_size = 50; // Small chunks
-
-    for (i, chunk) in bytes.chunks(chunk_size).enumerate() {
-        construct.add_chunk(chunk)?;
-
-        if construct.is_header_complete() {
-            println!("Header complete after chunk {}", i + 1);
-        }
-    }
-
-    // Finalize and use
-    let mut ply_file = construct.finalize()?;
-    let vertices: Vec<Vertex> = ply_file.read_elements("vertex")?;
-
-    println!(
-        "Built PLY from {} chunks",
-        (bytes.len() + chunk_size - 1) / chunk_size
-    );
-    println!("Final result: {} vertices\n", vertices.len());
-
-    Ok(())
-}
-
-fn example_streaming_reader() -> Result<(), Box<dyn std::error::Error>> {
-    println!("--- Example 4: Streaming element reader ---");
-
-    // Create a PLY file with many vertices
-    let mut ply_data = String::from(
-        r#"ply
-format ascii 1.0
-element vertex 1000
-property float x
-property float y
-property float z
-property uchar red
-property uchar green
-property uchar blue
-end_header
-"#,
-    );
-
-    // Add vertex data
-    for i in 0..1000 {
-        let base = i as f32 * 0.01;
-        ply_data.push_str(&format!(
-            "{} {} {} {} {} {}\n",
-            base,
-            base + 1.0,
-            base + 2.0,
-            (i % 256) as u8,
-            ((i * 2) % 256) as u8,
-            ((i * 3) % 256) as u8
-        ));
-    }
-
-    // Create PLY file from data using construct
-    let mut construct = PlyConstruct::new();
-    construct.add_chunk(ply_data.as_bytes())?;
-    let mut ply_file = construct.finalize()?;
-    let mut element_reader = ply_file.element_reader::<Vertex>("vertex")?;
-
-    // Process in chunks
-    let bytes = ply_data.as_bytes();
-    let header_end = ply_data.find("end_header\n").unwrap() + 11;
-    let data_portion = &bytes[header_end..];
-
-    let mut total_processed = 0;
-    // Process in chunks
-    for chunk in data_portion.chunks(1024) {
-        let vertices = element_reader.read_chunk(&mut ply_file, chunk)?;
-        total_processed += vertices.len();
-
-        if !vertices.is_empty() {
-            println!(
-                "Processed {} vertices (total: {})",
-                vertices.len(),
-                total_processed
-            );
-        }
-
-        if element_reader.is_complete() {
+    // Feed chunks until header is ready
+    while !ply_file.is_header_ready() {
+        if let Some(chunk) = chunk_iter.next() {
+            println!("Feeding header chunk ({} bytes)", chunk.len());
+            ply_file.feed_data(chunk);
+        } else {
             break;
         }
     }
 
-    println!(
-        "Streaming complete: {}/{} vertices\n",
-        element_reader.elements_read(),
-        element_reader.total_elements()
-    );
+    // Process vertices with interleaved feeding
+    let mut vertex_reader = ply_file.element_reader()?;
+    let mut vertices = Vec::new();
+
+    loop {
+        if let Some(chunk) = vertex_reader.next_chunk::<ColorVertex>(&mut ply_file)? {
+            println!("Parsed {} vertices", chunk.len());
+            vertices.extend(chunk);
+        }
+
+        if vertex_reader.is_finished() {
+            break;
+        }
+
+        if let Some(chunk) = chunk_iter.next() {
+            println!("Feeding data chunk ({} bytes)", chunk.len());
+            ply_file.feed_data(chunk);
+        } else {
+            break;
+        }
+    }
+
+    println!("Total vertices loaded: {}\n", vertices.len());
+    Ok(())
+}
+
+fn example_multi_element() -> Result<(), PlyError> {
+    println!("--- Multi-element file ---");
+
+    let ply_data = r#"ply
+format ascii 1.0
+element vertex 3
+property float x
+property float y
+property float z
+element face 1
+property list uchar int vertex_indices
+end_header
+0.0 0.0 0.0
+1.0 0.0 0.0
+0.5 1.0 0.0
+3 0 1 2
+"#;
+
+    let mut ply_file = PlyFile::new();
+    ply_file.feed_data(ply_data.as_bytes());
+
+    // Parse vertices
+    let mut vertex_reader = ply_file.element_reader()?;
+    let mut vertices = Vec::new();
+
+    while let Some(chunk) = vertex_reader.next_chunk::<Vertex>(&mut ply_file)? {
+        vertices.extend(chunk);
+    }
+
+    println!("Vertices: {}", vertices.len());
+    for (i, vertex) in vertices.iter().enumerate() {
+        println!("  {}: ({}, {}, {})", i, vertex.x, vertex.y, vertex.z);
+    }
+
+    // Advance to faces
+    ply_file.advance_to_next_element()?;
+    let mut face_reader = ply_file.element_reader()?;
+    let mut faces = Vec::new();
+
+    while let Some(chunk) = face_reader.next_chunk::<Face>(&mut ply_file)? {
+        faces.extend(chunk);
+    }
+
+    println!("Faces: {}", faces.len());
+    for (i, face) in faces.iter().enumerate() {
+        println!("  {}: {:?}", i, face.vertex_indices);
+    }
+    println!();
 
     Ok(())
 }

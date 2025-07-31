@@ -635,9 +635,6 @@ fn str_to_deserializer(s: &str) -> StrDeserializer<'_, PlyError> {
     StrDeserializer::new(s)
 }
 
-use serde::Deserialize;
-use std::io::Cursor;
-
 impl Default for ChunkedHeaderParser {
     fn default() -> Self {
         Self::new()

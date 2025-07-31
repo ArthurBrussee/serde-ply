@@ -162,15 +162,16 @@ fn benchmark_chunked_parsing(c: &mut Criterion) {
                 pos = end;
             }
 
-            let mut parser = header_parser.element_parser::<Vertex>("vertex").unwrap();
+            let mut file_parser = header_parser.into_file_parser().unwrap();
 
             // Parse elements
             while pos < binary_data.len() {
                 let end = (pos + chunk_size).min(binary_data.len());
                 let chunk = &binary_data[pos..end];
-                let _ = parser.parse_from_bytes(chunk).unwrap();
+                file_parser.add_data(chunk);
+                let _ = file_parser.parse_chunk::<Vertex>("vertex").unwrap();
                 pos = end;
-                if parser.is_complete() {
+                if file_parser.is_element_complete("vertex") {
                     break;
                 }
             }

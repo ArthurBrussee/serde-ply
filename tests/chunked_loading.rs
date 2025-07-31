@@ -44,7 +44,7 @@ end_header
 
     assert!(ply_file.is_header_ready());
 
-    let mut vertex_reader = ply_file.element_reader("vertex").unwrap();
+    let mut vertex_reader = ply_file.element_reader().unwrap();
     let mut all_vertices = Vec::new();
 
     while let Some(chunk) = vertex_reader.next_chunk::<Vertex>(&mut ply_file).unwrap() {
@@ -100,7 +100,7 @@ end_header
 
     assert!(ply_file.is_header_ready());
 
-    let mut vertex_reader = ply_file.element_reader("vertex").unwrap();
+    let mut vertex_reader = ply_file.element_reader().unwrap();
     let mut all_vertices = Vec::new();
 
     while let Some(chunk) = vertex_reader.next_chunk::<Vertex>(&mut ply_file).unwrap() {
@@ -150,7 +150,7 @@ end_header
 
     ply_file.feed_data(data_part);
 
-    let mut vertex_reader = ply_file.element_reader("vertex").unwrap();
+    let mut vertex_reader = ply_file.element_reader().unwrap();
     let vertices = vertex_reader
         .next_chunk::<Vertex>(&mut ply_file)
         .unwrap()
@@ -189,7 +189,7 @@ end_header
     ply_file.feed_data(ply_data.as_bytes());
 
     // Parse all vertices first
-    let mut vertex_reader = ply_file.element_reader("vertex").unwrap();
+    let mut vertex_reader = ply_file.element_reader().unwrap();
     let mut all_vertices = Vec::new();
 
     while let Some(chunk) = vertex_reader.next_chunk::<Vertex>(&mut ply_file).unwrap() {
@@ -202,7 +202,7 @@ end_header
     // Advance to faces
     ply_file.advance_to_next_element().unwrap();
 
-    let mut face_reader = ply_file.element_reader("face").unwrap();
+    let mut face_reader = ply_file.element_reader().unwrap();
     let mut all_faces = Vec::new();
 
     while let Some(chunk) = face_reader.next_chunk::<Face>(&mut ply_file).unwrap() {
@@ -239,7 +239,7 @@ fn test_binary_little_endian_chunked() {
 
     assert!(ply_file.is_header_ready());
 
-    let mut vertex_reader = ply_file.element_reader("vertex").unwrap();
+    let mut vertex_reader = ply_file.element_reader().unwrap();
     let mut all_vertices = Vec::new();
 
     while let Some(chunk) = vertex_reader.next_chunk::<Vertex>(&mut ply_file).unwrap() {
@@ -280,7 +280,7 @@ end_header
     let mut ply_file = PlyFile::new();
     ply_file.feed_data(ply_data.as_bytes());
 
-    let mut vertex_reader = ply_file.element_reader("vertex").unwrap();
+    let mut vertex_reader = ply_file.element_reader().unwrap();
 
     // Should get first vertex
     let first_chunk = vertex_reader
@@ -327,7 +327,7 @@ fn test_error_handling() {
     let mut ply_file = PlyFile::new();
 
     // Try to get reader before header is ready
-    let result = ply_file.element_reader("vertex");
+    let result = ply_file.element_reader();
     assert!(result.is_err());
 
     // Try to advance before header is ready
@@ -349,7 +349,7 @@ end_header
     let mut ply_file = PlyFile::new();
     ply_file.feed_data(ply_data.as_bytes());
 
-    let mut vertex_reader = ply_file.element_reader("vertex").unwrap();
+    let mut vertex_reader = ply_file.element_reader().unwrap();
     let chunk = vertex_reader.next_chunk::<Vertex>(&mut ply_file).unwrap();
 
     assert!(chunk.is_none());
@@ -374,7 +374,7 @@ end_header
         ply_file.feed_data(chunk);
     }
 
-    let mut face_reader = ply_file.element_reader("face").unwrap();
+    let mut face_reader = ply_file.element_reader().unwrap();
     let mut all_faces = Vec::new();
 
     while let Some(chunk) = face_reader.next_chunk::<Face>(&mut ply_file).unwrap() {
@@ -404,7 +404,7 @@ end_header
     let mut ply_file = PlyFile::new();
     ply_file.feed_data(ply_data.as_bytes());
 
-    let mut vertex_reader = ply_file.element_reader("vertex").unwrap();
+    let mut vertex_reader = ply_file.element_reader().unwrap();
     let vertices = vertex_reader
         .next_chunk::<ColorVertex>(&mut ply_file)
         .unwrap()
@@ -445,7 +445,7 @@ end_header
 
     assert!(ply_file.is_header_ready());
 
-    let mut vertex_reader = ply_file.element_reader("vertex").unwrap();
+    let mut vertex_reader = ply_file.element_reader().unwrap();
     let vertices = vertex_reader
         .next_chunk::<Vertex>(&mut ply_file)
         .unwrap()
@@ -488,7 +488,7 @@ end_header
         ply_file.feed_data(chunk);
     }
 
-    let mut vertex_reader = ply_file.element_reader("vertex").unwrap();
+    let mut vertex_reader = ply_file.element_reader().unwrap();
     let mut all_vertices = Vec::new();
     let mut chunk_count = 0;
 

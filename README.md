@@ -119,138 +119,81 @@ serde_ply::elements_to_writer(&mut file, &header, &vertices)?;
 ```rust
 use serde_ply::PlyFile;
 
-// Create PlyFile wrapper for chunked loading
 let mut ply_file = PlyFile::new();
+let mut chunk_iter = get_data_chunks(); // Your data source
 
-// Feed data in chunks (from network, async file reads, etc.)
+// Feed chunks until header is ready
+while !ply_file.is_header_ready() {
+    if let Some(chunk) = chunk_iter.next() {
+        ply_file.feed_data(&chunk);
+    } else { break; }
+}
+
+// Parse elements with interleaved data feeding
+let mut vertex_reader = ply_file.element_reader()?;
+let mut all_vertices = Vec::new();
+
 loop {
-    let chunk = read_next_chunk().await?; // Your data source
-    if chunk.is_empty() { break; }
+    if let Some(chunk) = vertex_reader.next_chunk::<Vertex>(&mut ply_file)? {
+        all_vertices.extend(chunk);
+    }
     
-    ply_file.feed_data(&chunk);
+    if vertex_reader.is_finished() { break; }
     
-    // Check if header is ready
-    if ply_file.is_header_ready() {
+    if let Some(chunk) = chunk_iter.next() {
+        ply_file.feed_data(&chunk);
+    } else { break; }
+}
+
+// Advance to next element
+ply_file.advance_to_next_element()?;
+let mut face_reader = ply_file.element_reader()?;
+
+// Continue with faces...
+```
+
+### Lower Level Chunked API
+```rust
+use serde_ply::chunked_header_parser;
+
+let mut header_parser = chunked_header_parser();
+loop {
+    let chunk = read_chunk().await?;
+    if header_parser.parse_from_bytes(&chunk)?.is_some() {
         break;
     }
 }
 
-// Access header information
-if let Some(header) = ply_file.header() {
-    println!("Format: {}", header.format);
-    for element in &header.elements {
-        println!("Element: {} (count: {})", element.name, element.count);
-    }
-}
-
-// Parse elements in chunks
-let mut vertex_reader = ply_file.element_reader("vertex")?;
-let mut all_vertices = Vec::new();
-
-while let Some(vertex_chunk) = vertex_reader.next_chunk::<Vertex>(&mut ply_file)? {
-    // Process this chunk of vertices
-    for vertex in &vertex_chunk {
-        println!("Vertex: {:?}", vertex);
-    }
-    all_vertices.extend(vertex_chunk);
-    
-    // Optionally yield control in async contexts
-    tokio::task::yield_now().await;
-}
-
-// Advance to next element type
-ply_file.advance_to_next_element()?;
-
-// Parse faces similarly
-let mut face_reader = ply_file.element_reader("face")?;
-while let Some(face_chunk) = face_reader.next_chunk::<Face>(&mut ply_file)? {
-    process_faces(face_chunk).await;
-}
-```
-
-### Legacy Async Chunked Parsing (Lower Level)
-```rust
-use serde_ply::chunked_header_parser;
-use tokio::io::AsyncReadExt;
-
-// Parse header from async source
-let mut header_parser = chunked_header_parser();
-loop {
-    let mut buffer = vec![0u8; 4096];
-    let bytes_read = async_reader.read(&mut buffer).await?;
-    buffer.truncate(bytes_read);
-    
-    if header_parser.parse_from_bytes(&buffer)?.is_some() {
-        break; // Header complete
-    }
-}
-
-// Create file parser from header (inherits leftover data automatically)
 let mut file_parser = header_parser.into_file_parser()?;
-
-// Parse elements in chunks
 loop {
-    let mut buffer = vec![0u8; 4096];
-    let bytes_read = async_reader.read(&mut buffer).await?;
+    let chunk = read_chunk().await?;
+    file_parser.add_data(&chunk);
     
-    if bytes_read == 0 { break; } // EOF
-    buffer.truncate(bytes_read);
-    
-    file_parser.add_data(&buffer);
-    
-    // Parse available elements
     if let Some(vertices) = file_parser.parse_chunk::<Vertex>("vertex")? {
         process_vertices(vertices).await;
     }
     
-    // Check if current element type is complete
     if file_parser.is_element_complete("vertex") {
         file_parser.advance_to_next_element();
     }
-    
-    tokio::task::yield_now().await;
 }
 ```
 
 ## Implementation
 
-### Core Insight: Advancing Reader Design
+### Core Design
 
-The API uses natural reader advancement through PLY data:
-1. **Parse header first**: `PlyHeader::parse()` advances reader past header
-2. **Sequential element parsing**: Each `parse_elements()` call advances through that element's data
-3. **Type-safe parsing**: Validate struct fields match PLY properties (fail fast)
-4. **Format specialization**: Create format-specific deserializers per header
-5. **Zero runtime dispatch**: When serde calls `deserialize_f32()`, read f32 directly
+**Sequential Element Processing**: Elements are parsed in order as defined in the header. The `element_reader()` returns a reader for the current element type.
 
-**Chunked PLY Loading Benefits:**
-- **Async-compatible**: Works with tokio AsyncRead, network streams, async files
-- **Memory efficient**: Process large files with constant memory usage (no full buffering)
-- **Seamless boundaries**: PlyFile manages leftover data between chunks automatically
-- **Progressive parsing**: Parse header first, then elements as data becomes available
-- **Format agnostic**: Works with ASCII (line boundaries) and binary (element boundaries)
-- **Network-friendly**: Handles variable chunk sizes from network streams
-- **Multi-element support**: Parse vertices, faces, and other elements sequentially
-- **Flexible API**: High-level PlyFile wrapper or lower-level chunked parsers
+**Chunked Loading**: Feed data of any size, parse elements as they become available. Leftover data is automatically preserved between chunks.
 
-**Type-Level Specialization Design:**
-The library uses Rust's type system to eliminate runtime format checking. Instead of:
+**Type-Level Specialization**: Format is determined once per element batch:
 ```rust
-// Runtime dispatch (eliminated)
-match format {
-    Ascii => parse_ascii_f32(),
-    Binary => parse_binary_f32(),
-}
+AsciiElementDeserializer<R>::deserialize_f32()   // Direct ASCII parsing
+BinaryElementDeserializer<R, E>::deserialize_f32() // Direct binary parsing
 ```
 
-We use compile-time specialization:
-```rust
-// Type-level dispatch (current approach) 
-AsciiElementDeserializer<R>::deserialize_f32()   // ASCII-only path
-BinaryElementDeserializer<R, E>::deserialize_f32() // Binary-only path
-```
-
-Format decision happens once per element batch, not per field.
+No runtime format dispatch on the critical path.
 
 ### Performance Optimizations
 
@@ -345,16 +288,12 @@ Format decision happens once per element batch, not per field.
 - Option<T> fields: minimal overhead
 - Transparent wrappers: zero-cost abstractions
 
-**Chunked PLY Loading Architecture**:
-- `PlyFile` wrapper manages entire chunked loading lifecycle
-- `ChunkedHeaderParser` parses headers from byte chunks, retains leftover data
-- `ChunkedFileParser` handles element parsing with automatic leftover data management
-- `ElementReader` provides convenient chunked element access
-- Binary formats: Calculate exact element sizes, buffer incomplete elements
-- ASCII formats: Buffer data until complete lines available, respect line boundaries  
-- State management: Maintains parsing state between chunk reads
-- Boundary safety: Never parses incomplete elements, handles partial data correctly
-- Progressive element access: Parse elements as data becomes available, not all at once
+**Chunked Architecture**:
+- `PlyFile` manages complete chunked loading lifecycle
+- Automatic leftover data management between chunks
+- Progressive element access - parse as data becomes available
+- Binary/ASCII boundary handling for incomplete elements
+- Current element tracking - no need to specify element names
 
 **PLY Specification Compliance**:
 - **Complete scalar type support**: All PLY data types (char, uchar, short, ushort, int, uint, float, double)

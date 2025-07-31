@@ -1,4 +1,4 @@
-//! PLY parser with type-level format specialization
+//! High-performance PLY parser with chunked loading support
 
 pub mod de;
 pub mod ply_file;
@@ -288,7 +288,6 @@ impl PlyHeader {
     }
 }
 
-/// Parse elements from a reader after the header has been parsed
 pub fn parse_elements<R, T>(
     reader: R,
     header: &PlyHeader,
@@ -303,7 +302,6 @@ where
         .ok_or_else(|| PlyError::MissingElement(element_name.to_string()))?;
 
     let properties = element_def.properties.to_vec();
-
     let mut results = Vec::new();
 
     match header.format {
