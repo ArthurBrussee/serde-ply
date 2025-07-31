@@ -92,8 +92,6 @@ impl<R: BufRead> AsciiElementDeserializer<R> {
         let mut line = String::new();
         self.reader.read_line(&mut line)?;
 
-        // TODO: This could pobably be more efficient, potentially even could just hold on to
-        // a slice of data. Lifetimes might be a mess but should work.
         self.current_line_tokens = line.split_whitespace().map(|s| s.to_string()).collect();
         self.token_index = 0;
         Ok(())

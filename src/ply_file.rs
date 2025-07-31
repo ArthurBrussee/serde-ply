@@ -1,5 +1,3 @@
-use std::io::{BufRead, BufReader, Cursor};
-
 use crate::{
     de::{find_header_end, AsciiDirectElementDeserializer},
     AsciiElementDeserializer, BinaryElementDeserializer, ElementDef, FormatDeserializer, PlyError,
@@ -36,7 +34,7 @@ pub(crate) struct ChunkedFileParser {
     pub elements_parsed_in_current: usize,
 }
 
-enum ParseChunk<T> {
+pub(crate) enum ParseChunk<T> {
     Advance(Vec<T>, usize),
     Done,
 }
@@ -48,18 +46,16 @@ impl ChunkedFileParser {
     where
         T: for<'de> serde::Deserialize<'de>,
     {
+        // Check if we've moved past all elements
+        if self.current_element_index >= self.header.elements.len() {
+            return Ok(ParseChunk::Done);
+        }
+
         // Find the element definition and clone it to avoid borrowing issues
         // TODO: Ideally, we wouldn't need to clone the element def here.
         let element_def = self.header.elements[self.current_element_index].clone();
 
-        // Check if we've already finished parsing this element type
-        if self.elements_parsed_in_current >= element_def.count {
-            // Advance to the next element.
-            self.current_element_index += 1;
-            return Ok(ParseChunk::Done);
-        }
-
-        match self.header.format {
+        let ret = match self.header.format {
             PlyFormat::Ascii => self.parse_ascii_chunk::<T>(&element_def, buffer),
             PlyFormat::BinaryLittleEndian => {
                 self.parse_binary_chunk::<T, byteorder::LittleEndian>(&element_def, buffer)
@@ -67,7 +63,16 @@ impl ChunkedFileParser {
             PlyFormat::BinaryBigEndian => {
                 self.parse_binary_chunk::<T, byteorder::BigEndian>(&element_def, buffer)
             }
+        };
+
+        // Check if we've already finished parsing this element type
+        if self.elements_parsed_in_current >= element_def.count {
+            // Advance to the next element.
+            self.current_element_index += 1;
+            self.elements_parsed_in_current = 0;
         }
+
+        ret
     }
 
     /// Check if all elements of a specific type have been parsed
@@ -88,31 +93,46 @@ impl ChunkedFileParser {
         T: for<'de> serde::Deserialize<'de>,
     {
         let mut elements = Vec::new();
-        let reader = Cursor::new(buffer);
-        let reader = BufReader::new(reader);
+        let mut bytes_consumed = 0;
+        let mut cursor = 0;
 
-        let line = String::new();
-        reader.read_line(&mut line);
+        // Parse lines from the buffer
+        while cursor < buffer.len() && self.elements_parsed_in_current < element_def.count {
+            // Find the next newline
+            if let Some(newline_pos) = buffer[cursor..].iter().position(|&b| b == b'\n') {
+                let line_end = cursor + newline_pos;
+                let line_bytes = &buffer[cursor..line_end];
 
-        if !line.trim().is_empty() {
-            let element = self.parse_ascii_line::<T>(&line, &element_def.properties)?;
-            elements.push(element);
-            self.elements_parsed_in_current += 1;
+                // Convert to string, skipping invalid UTF-8
+                if let Ok(line) = std::str::from_utf8(line_bytes) {
+                    let line = line.trim();
+                    if !line.is_empty() {
+                        let element = self.parse_ascii_line::<T>(line, &element_def.properties)?;
+                        elements.push(element);
+                        self.elements_parsed_in_current += 1;
+                    }
+                }
+
+                cursor = line_end + 1; // Move past the newline
+                bytes_consumed = cursor;
+            } else {
+                // No complete line found, need more data
+                break;
+            }
         }
 
-        // Return elements (even if none are done yet).
-        Ok(ParseChunk::Advance(elements, reader.seek_relative(offset)))
+        Ok(ParseChunk::Advance(elements, bytes_consumed))
     }
 
     fn parse_binary_chunk<T, E: ByteOrder>(
         &mut self,
         element_def: &ElementDef,
         buffer: &[u8],
-    ) -> Result<Option<Vec<T>>, PlyError>
+    ) -> Result<ParseChunk<T>, PlyError>
     where
         T: for<'de> serde::Deserialize<'de>,
     {
-        // TODO: It doesn't work with lists to calculate a binary size upfront. We should
+        // TODO: This doesn't work with lists to calculate a binary size upfront. We should
         // instead properly handle early EOF in deserializer.next_element(). This is
         // important anyway for correctness.
         let element_size = calculate_binary_element_size(&element_def.properties)?;
@@ -121,7 +141,7 @@ impl ChunkedFileParser {
         let elements_to_parse = remaining_elements.min(available_elements);
 
         if elements_to_parse == 0 {
-            return Ok(None); // Not enough data for complete elements
+            return Ok(ParseChunk::Advance(Vec::new(), 0)); // Not enough data for complete elements
         }
 
         let bytes_to_consume = elements_to_parse * element_size;
@@ -140,7 +160,7 @@ impl ChunkedFileParser {
 
         self.elements_parsed_in_current += elements.len();
 
-        Ok(Some(elements))
+        Ok(ParseChunk::Advance(elements, bytes_to_consume))
     }
 
     fn parse_ascii_line<T>(&self, line: &str, properties: &[PropertyType]) -> Result<T, PlyError>
@@ -209,7 +229,22 @@ impl PlyFile {
         T: for<'de> Deserialize<'de>,
     {
         match &mut self.state {
-            ParseState::ParsingElements { parser } => parser.parse_chunk::<T>(&self.data_buffer),
+            ParseState::ParsingElements { parser } => {
+                match parser.parse_chunk::<T>(&self.data_buffer)? {
+                    ParseChunk::Advance(elements, bytes_consumed) => {
+                        // Remove consumed bytes from buffer
+                        if bytes_consumed > 0 {
+                            self.data_buffer.drain(..bytes_consumed);
+                        }
+                        if elements.is_empty() {
+                            Ok(None)
+                        } else {
+                            Ok(Some(elements))
+                        }
+                    }
+                    ParseChunk::Done => Ok(None),
+                }
+            }
             _ => Err(PlyError::InvalidHeader(
                 "Not in element parsing state".to_string(),
             )),

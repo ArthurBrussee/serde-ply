@@ -70,7 +70,7 @@ impl fmt::Display for PlyFormat {
     }
 }
 
-// TODO: Idk if rust has some builtin way? Like f32 is an existing type, but probably no clean way to do it.
+// TODO: Idk if rust has some builtin way? All these are existing scalar types, but probably no clean way to do it.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ScalarType {
     I8,
