@@ -16,119 +16,99 @@ struct Face {
 }
 
 fn main() -> Result<(), PlyError> {
-    println!("=== Interleaved Chunked PLY Loading ===\n");
+    println!("=== Chunked PLY Parsing ===\n");
+    demo_basic_chunked()?;
+    demonstrate_binary_chunked()?;
+    demo_large_file_simulation()?;
+    Ok(())
+}
+
+fn demo_basic_chunked() -> Result<(), PlyError> {
+    println!("--- Basic chunked parsing ---");
 
     let ply_data = r#"ply
 format ascii 1.0
-element vertex 4
+element vertex 3
 property float x
 property float y
 property float z
-element face 2
-property list uchar int vertex_indices
 end_header
-0.0 0.0 0.0
-1.0 0.0 0.0
-0.5 1.0 0.0
-0.0 1.0 1.0
-3 0 1 2
-3 1 2 3
+1.0 2.0 3.0
+4.0 5.0 6.0
+7.0 8.0 9.0
 "#;
 
-    // Simulate network chunks
-    let chunks: Vec<&[u8]> = ply_data.as_bytes().chunks(25).collect();
-    println!("Processing {} chunks...\n", chunks.len());
+    let mut ply_file = PlyFile::new();
+
+    // Feed in small chunks
+    for chunk in ply_data.as_bytes().chunks(15) {
+        ply_file.feed_data(chunk);
+    }
+
+    // Parse all vertices
+    let mut total = 0;
+
+    while let Some(chunk) = ply_file.next_chunk::<Vertex>()? {
+        total += chunk.len();
+        println!("Got {} vertices, total: {}", chunk.len(), total);
+    }
+
+    println!("Completed: {total} vertices\n");
+    Ok(())
+}
+
+fn demo_large_file_simulation() -> Result<(), PlyError> {
+    println!("--- Large file simulation ---");
+
+    // Create larger PLY data
+    let mut ply_data = String::from(
+        r#"ply
+format ascii 1.0
+element vertex 50
+property float x
+property float y
+property float z
+end_header
+"#,
+    );
+
+    // Add 50 vertices
+    for i in 0..50 {
+        ply_data.push_str(&format!("{}.0 {}.0 {}.0\n", i, i + 1, i + 2));
+    }
 
     let mut ply_file = PlyFile::new();
+    let chunks: Vec<&[u8]> = ply_data.as_bytes().chunks(100).collect();
     let mut chunk_iter = chunks.iter();
 
-    // Feed chunks until header is ready
-    while !ply_file.is_header_ready() {
+    // Process header
+    while ply_file.header().is_none() {
         if let Some(chunk) = chunk_iter.next() {
-            println!("Feeding chunk ({} bytes) for header...", chunk.len());
             ply_file.feed_data(chunk);
         } else {
             break;
         }
     }
 
-    if let Some(header) = ply_file.header() {
-        println!("Header ready! Format: {}", header.format);
-        for element in &header.elements {
-            println!("  Element: {} (count: {})", element.name, element.count);
-        }
-        println!();
-    }
+    println!("Header parsed, processing vertices...");
 
-    // Process vertices with interleaved data feeding
-    let mut vertex_reader = ply_file.element_reader()?;
-    let mut all_vertices = Vec::new();
+    // Process vertices with interleaved feeding
+    let mut total = 0;
 
     loop {
-        // Try to parse available vertices
-        if let Some(vertex_chunk) = vertex_reader.next_chunk::<Vertex>(&mut ply_file)? {
-            println!("Parsed {} vertices", vertex_chunk.len());
-            all_vertices.extend(vertex_chunk);
+        while let Some(chunk) = ply_file.next_chunk::<Vertex>()? {
+            total += chunk.len();
+            println!("Processed {} vertices (total: {})", chunk.len(), total);
         }
 
-        // Check if we need more data
-        if vertex_reader.is_finished() {
-            println!(
-                "Finished parsing vertices (total: {})\n",
-                all_vertices.len()
-            );
-            break;
-        }
-
-        // Feed more data if available
         if let Some(chunk) = chunk_iter.next() {
-            println!("Feeding chunk ({} bytes) for vertices...", chunk.len());
-            ply_file.feed_data(chunk);
-        } else {
-            println!("No more data available");
-            break;
-        }
-    }
-
-    // Advance to faces
-    ply_file.advance_to_next_element()?;
-    let mut face_reader = ply_file.element_reader()?;
-    let mut all_faces = Vec::new();
-
-    loop {
-        // Try to parse available faces
-        if let Some(face_chunk) = face_reader.next_chunk::<Face>(&mut ply_file)? {
-            println!("Parsed {} faces", face_chunk.len());
-            all_faces.extend(face_chunk);
-        }
-
-        if face_reader.is_finished() {
-            println!("Finished parsing faces (total: {})\n", all_faces.len());
-            break;
-        }
-
-        // Feed remaining data
-        if let Some(chunk) = chunk_iter.next() {
-            println!("Feeding chunk ({} bytes) for faces...", chunk.len());
             ply_file.feed_data(chunk);
         } else {
             break;
         }
     }
 
-    // Show results
-    println!("=== Results ===");
-    for (i, vertex) in all_vertices.iter().enumerate() {
-        println!("Vertex {}: {:?}", i, vertex);
-    }
-    for (i, face) in all_faces.iter().enumerate() {
-        println!("Face {}: {:?}", i, face);
-    }
-
-    // Demonstrate binary format
-    println!("\n=== Binary Format Demo ===");
-    demonstrate_binary_chunked()?;
-
+    println!("Completed: {total} vertices total\n");
     Ok(())
 }
 
@@ -151,7 +131,10 @@ fn demonstrate_binary_chunked() -> Result<(), PlyError> {
     let mut chunk_iter = chunks.iter();
 
     // Header parsing
-    while !ply_file.is_header_ready() {
+    while !{
+        let this = &ply_file;
+        this.header().is_some()
+    } {
         if let Some(chunk) = chunk_iter.next() {
             ply_file.feed_data(chunk);
         } else {
@@ -159,89 +142,15 @@ fn demonstrate_binary_chunked() -> Result<(), PlyError> {
         }
     }
 
-    // Interleaved vertex parsing
-    let mut vertex_reader = ply_file.element_reader()?;
-    loop {
-        if let Some(chunk) = vertex_reader.next_chunk::<Vertex>(&mut ply_file)? {
+    for chunk in chunk_iter {
+        ply_file.feed_data(chunk);
+
+        while let Some(chunk) = ply_file.next_chunk::<Vertex>()? {
             for vertex in chunk {
-                println!("Binary vertex: {:?}", vertex);
+                println!("Binary vertex: {vertex:?}");
             }
-        }
-
-        if vertex_reader.is_finished() {
-            break;
-        }
-
-        if let Some(chunk) = chunk_iter.next() {
-            ply_file.feed_data(chunk);
-        } else {
-            break;
         }
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_interleaved_feeding() {
-        let ply_data = r#"ply
-format ascii 1.0
-element vertex 2
-property float x
-property float y
-property float z
-end_header
-1.0 2.0 3.0
-4.0 5.0 6.0
-"#;
-
-        let mut ply_file = PlyFile::new();
-        let chunks: Vec<&[u8]> = ply_data.as_bytes().chunks(10).collect();
-        let mut chunk_iter = chunks.iter();
-
-        // Feed until header ready
-        while !ply_file.is_header_ready() {
-            if let Some(chunk) = chunk_iter.next() {
-                ply_file.feed_data(chunk);
-            } else {
-                break;
-            }
-        }
-
-        assert!(ply_file.is_header_ready());
-
-        // Interleaved vertex parsing
-        let mut vertex_reader = ply_file.element_reader().unwrap();
-        let mut all_vertices = Vec::new();
-
-        loop {
-            if let Some(chunk) = vertex_reader.next_chunk::<Vertex>(&mut ply_file).unwrap() {
-                all_vertices.extend(chunk);
-            }
-
-            if vertex_reader.is_finished() {
-                break;
-            }
-
-            if let Some(chunk) = chunk_iter.next() {
-                ply_file.feed_data(chunk);
-            } else {
-                break;
-            }
-        }
-
-        assert_eq!(all_vertices.len(), 2);
-        assert_eq!(
-            all_vertices[0],
-            Vertex {
-                x: 1.0,
-                y: 2.0,
-                z: 3.0
-            }
-        );
-    }
 }

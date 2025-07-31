@@ -4,24 +4,26 @@ pub mod de;
 pub mod ply_file;
 pub mod ser;
 
-pub use de::{
-    AsciiElementDeserializer, BinaryElementDeserializer, ChunkedFileParser, ChunkedHeaderParser,
-    FormatDeserializer,
-};
-pub use ply_file::{ElementReader, PlyConstruct, PlyFile};
+pub use de::FormatDeserializer;
+pub use ply_file::PlyFile;
 pub use ser::{
     elements_to_bytes, elements_to_writer, to_bytes, to_string, to_writer, PlySerializer,
 };
 
-use std::fmt;
 use std::io::BufRead;
 use std::str::FromStr;
+use std::{fmt, string::FromUtf8Error};
 use thiserror::Error;
+
+use crate::de::{AsciiElementDeserializer, BinaryElementDeserializer};
 
 #[derive(Error, Debug)]
 pub enum PlyError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("Invalid ascii data: {0}")]
+    InvalidAscii(#[from] FromUtf8Error),
 
     #[error("Invalid PLY header: {0}")]
     InvalidHeader(String),
@@ -68,29 +70,30 @@ impl fmt::Display for PlyFormat {
     }
 }
 
+// TODO: Idk if rust has some builtin way? Like f32 is an existing type, but probably no clean way to do it.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ScalarType {
-    Char,
-    UChar,
-    Short,
-    UShort,
-    Int,
-    UInt,
-    Float,
-    Double,
+    I8,
+    U8,
+    I16,
+    U16,
+    I32,
+    U32,
+    F32,
+    F64,
 }
 
 impl ScalarType {
     pub fn parse(s: &str) -> Result<Self, PlyError> {
         match s {
-            "char" | "int8" => Ok(ScalarType::Char),
-            "uchar" | "uint8" => Ok(ScalarType::UChar),
-            "short" | "int16" => Ok(ScalarType::Short),
-            "ushort" | "uint16" => Ok(ScalarType::UShort),
-            "int" | "int32" => Ok(ScalarType::Int),
-            "uint" | "uint32" => Ok(ScalarType::UInt),
-            "float" | "float32" => Ok(ScalarType::Float),
-            "double" | "float64" => Ok(ScalarType::Double),
+            "char" | "int8" => Ok(ScalarType::I8),
+            "uchar" | "uint8" => Ok(ScalarType::U8),
+            "short" | "int16" => Ok(ScalarType::I16),
+            "ushort" | "uint16" => Ok(ScalarType::U16),
+            "int" | "int32" => Ok(ScalarType::I32),
+            "uint" | "uint32" => Ok(ScalarType::U32),
+            "float" | "float32" => Ok(ScalarType::F32),
+            "double" | "float64" => Ok(ScalarType::F64),
             _ => Err(PlyError::UnsupportedFormat(format!(
                 "Unknown scalar type: {s}"
             ))),
@@ -99,10 +102,10 @@ impl ScalarType {
 
     pub fn size_bytes(&self) -> usize {
         match self {
-            ScalarType::Char | ScalarType::UChar => 1,
-            ScalarType::Short | ScalarType::UShort => 2,
-            ScalarType::Int | ScalarType::UInt | ScalarType::Float => 4,
-            ScalarType::Double => 8,
+            ScalarType::I8 | ScalarType::U8 => 1,
+            ScalarType::I16 | ScalarType::U16 => 2,
+            ScalarType::I32 | ScalarType::U32 | ScalarType::F32 => 4,
+            ScalarType::F64 => 8,
         }
     }
 }
@@ -335,71 +338,4 @@ where
     }
 
     Ok(results)
-}
-
-pub fn chunked_header_parser() -> ChunkedHeaderParser {
-    ChunkedHeaderParser::new()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::{BufReader, Cursor};
-
-    #[test]
-    fn test_header_parsing() {
-        let header_text = r#"ply
-format ascii 1.0
-element vertex 2
-property float x
-property float y
-property float z
-end_header
-"#;
-        let header = PlyHeader::parse(BufReader::new(Cursor::new(header_text))).unwrap();
-        assert_eq!(header.format, PlyFormat::Ascii);
-        assert_eq!(header.elements.len(), 1);
-        assert_eq!(header.get_element("vertex").unwrap().count, 2);
-    }
-
-    #[test]
-    fn test_scalar_types() {
-        assert_eq!(ScalarType::parse("float").unwrap(), ScalarType::Float);
-        assert_eq!(ScalarType::parse("double").unwrap(), ScalarType::Double);
-        assert!(ScalarType::parse("invalid").is_err());
-    }
-
-    #[test]
-    fn test_basic_parsing() {
-        #[derive(serde::Deserialize, Debug, PartialEq)]
-        struct Vertex {
-            x: f32,
-            y: f32,
-            z: f32,
-        }
-
-        let ply_data = r#"ply
-format ascii 1.0
-element vertex 1
-property float x
-property float y
-property float z
-end_header
-1.0 2.0 3.0
-"#;
-        let cursor = Cursor::new(ply_data);
-        let mut reader = BufReader::new(cursor);
-        let header = PlyHeader::parse(&mut reader).unwrap();
-        let vertices: Vec<Vertex> = parse_elements(&mut reader, &header, "vertex").unwrap();
-
-        assert_eq!(vertices.len(), 1);
-        assert_eq!(
-            vertices[0],
-            Vertex {
-                x: 1.0,
-                y: 2.0,
-                z: 3.0
-            }
-        );
-    }
 }

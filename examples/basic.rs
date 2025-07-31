@@ -62,27 +62,27 @@ end_header
             count: vertices.len(),
             properties: vec![
                 PropertyType::Scalar {
-                    data_type: ScalarType::Float,
+                    data_type: ScalarType::F32,
                     name: "x".to_string(),
                 },
                 PropertyType::Scalar {
-                    data_type: ScalarType::Float,
+                    data_type: ScalarType::F32,
                     name: "y".to_string(),
                 },
                 PropertyType::Scalar {
-                    data_type: ScalarType::Float,
+                    data_type: ScalarType::F32,
                     name: "z".to_string(),
                 },
                 PropertyType::Scalar {
-                    data_type: ScalarType::UChar,
+                    data_type: ScalarType::U8,
                     name: "red".to_string(),
                 },
                 PropertyType::Scalar {
-                    data_type: ScalarType::UChar,
+                    data_type: ScalarType::U8,
                     name: "green".to_string(),
                 },
                 PropertyType::Scalar {
-                    data_type: ScalarType::UChar,
+                    data_type: ScalarType::U8,
                     name: "blue".to_string(),
                 },
             ],

@@ -1,42 +1,187 @@
-//! Chunked PLY file loading with interleaved data feeding and element parsing
+use std::io::{BufRead, BufReader, Cursor};
 
 use crate::{
-    de::{find_header_end, ChunkedFileParser, ChunkedHeaderParser},
-    PlyError, PlyHeader,
+    de::{find_header_end, AsciiDirectElementDeserializer},
+    AsciiElementDeserializer, BinaryElementDeserializer, ElementDef, FormatDeserializer, PlyError,
+    PlyFormat, PlyHeader, PropertyType,
 };
+use byteorder::ByteOrder;
 use serde::Deserialize;
-use std::collections::VecDeque;
+
+/// TODO: Instead of doing this, we should track sizes WHILE parsing, as then we know the size of lists.
+/// Calculate the size in bytes of a binary element based on its properties
+fn calculate_binary_element_size(properties: &[PropertyType]) -> Result<usize, PlyError> {
+    let mut size = 0;
+
+    for property in properties {
+        match property {
+            PropertyType::Scalar { data_type, .. } => {
+                size += data_type.size_bytes();
+            }
+            PropertyType::List { .. } => {
+                return Err(PlyError::Serde(
+                    "List properties not supported in chunked binary parsing - use sequential parsing instead".to_string()
+                ));
+            }
+        }
+    }
+
+    Ok(size)
+}
+
+#[derive(Debug)]
+pub(crate) struct ChunkedFileParser {
+    pub header: PlyHeader,
+    pub current_element_index: usize,
+    pub elements_parsed_in_current: usize,
+}
+
+enum ParseChunk<T> {
+    Advance(Vec<T>, usize),
+    Done,
+}
+
+impl ChunkedFileParser {
+    /// Parse elements of a specific type from buffered data. This returns Ok(Vec) as long as there are elements remaining.
+    /// When no more elemnts remain, this will return None.
+    pub fn parse_chunk<T>(&mut self, buffer: &[u8]) -> Result<ParseChunk<T>, PlyError>
+    where
+        T: for<'de> serde::Deserialize<'de>,
+    {
+        // Find the element definition and clone it to avoid borrowing issues
+        // TODO: Ideally, we wouldn't need to clone the element def here.
+        let element_def = self.header.elements[self.current_element_index].clone();
+
+        // Check if we've already finished parsing this element type
+        if self.elements_parsed_in_current >= element_def.count {
+            // Advance to the next element.
+            self.current_element_index += 1;
+            return Ok(ParseChunk::Done);
+        }
+
+        match self.header.format {
+            PlyFormat::Ascii => self.parse_ascii_chunk::<T>(&element_def, buffer),
+            PlyFormat::BinaryLittleEndian => {
+                self.parse_binary_chunk::<T, byteorder::LittleEndian>(&element_def, buffer)
+            }
+            PlyFormat::BinaryBigEndian => {
+                self.parse_binary_chunk::<T, byteorder::BigEndian>(&element_def, buffer)
+            }
+        }
+    }
+
+    /// Check if all elements of a specific type have been parsed
+    pub fn is_element_complete(&self) -> bool {
+        self.elements_parsed_in_current >= self.header.elements[self.current_element_index].count
+    }
+
+    pub fn all_elements_complete(&self) -> bool {
+        self.current_element_index >= self.header.elements.len()
+    }
+
+    fn parse_ascii_chunk<T>(
+        &mut self,
+        element_def: &ElementDef,
+        buffer: &[u8],
+    ) -> Result<ParseChunk<T>, PlyError>
+    where
+        T: for<'de> serde::Deserialize<'de>,
+    {
+        let mut elements = Vec::new();
+        let reader = Cursor::new(buffer);
+        let reader = BufReader::new(reader);
+
+        let line = String::new();
+        reader.read_line(&mut line);
+
+        if !line.trim().is_empty() {
+            let element = self.parse_ascii_line::<T>(&line, &element_def.properties)?;
+            elements.push(element);
+            self.elements_parsed_in_current += 1;
+        }
+
+        // Return elements (even if none are done yet).
+        Ok(ParseChunk::Advance(elements, reader.seek_relative(offset)))
+    }
+
+    fn parse_binary_chunk<T, E: ByteOrder>(
+        &mut self,
+        element_def: &ElementDef,
+        buffer: &[u8],
+    ) -> Result<Option<Vec<T>>, PlyError>
+    where
+        T: for<'de> serde::Deserialize<'de>,
+    {
+        // TODO: It doesn't work with lists to calculate a binary size upfront. We should
+        // instead properly handle early EOF in deserializer.next_element(). This is
+        // important anyway for correctness.
+        let element_size = calculate_binary_element_size(&element_def.properties)?;
+        let remaining_elements = element_def.count - self.elements_parsed_in_current;
+        let available_elements = buffer.len() / element_size;
+        let elements_to_parse = remaining_elements.min(available_elements);
+
+        if elements_to_parse == 0 {
+            return Ok(None); // Not enough data for complete elements
+        }
+
+        let bytes_to_consume = elements_to_parse * element_size;
+
+        let mut elements = Vec::with_capacity(elements_to_parse);
+        let cursor = std::io::Cursor::new(&buffer[..bytes_to_consume]);
+        let mut deserializer = BinaryElementDeserializer::<_, E>::new(
+            cursor,
+            elements_to_parse,
+            element_def.properties.clone(),
+        );
+
+        while let Some(element) = deserializer.next_element::<T>()? {
+            elements.push(element);
+        }
+
+        self.elements_parsed_in_current += elements.len();
+
+        Ok(Some(elements))
+    }
+
+    fn parse_ascii_line<T>(&self, line: &str, properties: &[PropertyType]) -> Result<T, PlyError>
+    where
+        T: for<'de> serde::Deserialize<'de>,
+    {
+        let tokens: Vec<String> = line.split_whitespace().map(|s| s.to_string()).collect();
+
+        let mut deserializer = AsciiElementDeserializer {
+            reader: std::io::Cursor::new(line),
+            elements_read: 0,
+            element_count: 1,
+            current_line_tokens: tokens,
+            token_index: 0,
+            properties: properties.to_vec(),
+        };
+
+        let direct_deserializer = AsciiDirectElementDeserializer {
+            parent: &mut deserializer,
+        };
+
+        T::deserialize(direct_deserializer)
+    }
+}
 
 #[derive(Debug)]
 enum ParseState {
-    WaitingForHeader(ChunkedHeaderParser),
-    ParsingElements {
-        parser: ChunkedFileParser,
-        current_element_index: usize,
-    },
-    Finished,
+    WaitingForHeader,
+    ParsingElements { parser: ChunkedFileParser },
 }
 
 pub struct PlyFile {
     state: ParseState,
-    data_buffer: VecDeque<u8>,
-}
-
-pub struct ElementReader {
-    finished: bool,
-}
-
-pub trait PlyConstruct {
-    fn from_ply_file(ply_file: &mut PlyFile) -> Result<Self, PlyError>
-    where
-        Self: Sized;
+    data_buffer: Vec<u8>,
 }
 
 impl PlyFile {
     pub fn new() -> Self {
         Self {
-            state: ParseState::WaitingForHeader(ChunkedHeaderParser::new()),
-            data_buffer: VecDeque::new(),
+            state: ParseState::WaitingForHeader,
+            data_buffer: Vec::new(),
         }
     }
 
@@ -47,24 +192,16 @@ impl PlyFile {
 
     pub fn header(&self) -> Option<&PlyHeader> {
         match &self.state {
-            ParseState::ParsingElements { parser, .. } => Some(&parser.header),
+            ParseState::ParsingElements { parser } => Some(&parser.header),
             _ => None,
         }
     }
 
-    pub fn is_header_ready(&self) -> bool {
-        matches!(self.state, ParseState::ParsingElements { .. })
-    }
-
     pub fn is_finished(&self) -> bool {
-        matches!(self.state, ParseState::Finished)
-    }
-
-    pub fn element_reader(&self) -> Result<ElementReader, PlyError> {
-        if !self.is_header_ready() {
-            return Err(PlyError::InvalidHeader("Header not yet parsed".to_string()));
+        match &self.state {
+            ParseState::ParsingElements { parser } => parser.all_elements_complete(),
+            _ => false,
         }
-        Ok(ElementReader { finished: false })
     }
 
     pub fn next_chunk<T>(&mut self) -> Result<Option<Vec<T>>, PlyError>
@@ -72,16 +209,7 @@ impl PlyFile {
         T: for<'de> Deserialize<'de>,
     {
         match &mut self.state {
-            ParseState::ParsingElements {
-                parser,
-                current_element_index,
-            } => {
-                let available_data: Vec<u8> = self.data_buffer.drain(..).collect();
-                parser.add_data(&available_data);
-
-                let element_name = parser.header.elements[*current_element_index].name.clone();
-                parser.parse_chunk::<T>(&element_name)
-            }
+            ParseState::ParsingElements { parser } => parser.parse_chunk::<T>(&self.data_buffer),
             _ => Err(PlyError::InvalidHeader(
                 "Not in element parsing state".to_string(),
             )),
@@ -90,42 +218,16 @@ impl PlyFile {
 
     pub fn is_element_complete(&self) -> bool {
         match &self.state {
-            ParseState::ParsingElements {
-                parser,
-                current_element_index,
-            } => {
-                let element_name = parser.header.elements[*current_element_index].name.clone();
-                parser.is_element_complete(&element_name)
-            }
+            ParseState::ParsingElements { parser } => parser.is_element_complete(),
             _ => false,
         }
     }
 
-    pub fn advance_to_next_element(&mut self) -> Result<(), PlyError> {
-        match &mut self.state {
-            ParseState::ParsingElements {
-                parser,
-                current_element_index,
-            } => {
-                parser.advance_to_next_element();
-                *current_element_index += 1;
-
-                if *current_element_index >= parser.header.elements.len() {
-                    self.state = ParseState::Finished;
-                }
-                Ok(())
-            }
-            _ => Err(PlyError::InvalidHeader(
-                "Not in element parsing state".to_string(),
-            )),
-        }
-    }
-
     fn try_parse_header(&mut self) {
-        if let ParseState::WaitingForHeader(_header_parser) = &mut self.state {
-            let available_data: Vec<u8> = self.data_buffer.drain(..).collect();
+        if let ParseState::WaitingForHeader = &mut self.state {
+            let available_data = &self.data_buffer;
 
-            if let Some(end_pos) = find_header_end(&available_data) {
+            if let Some(end_pos) = find_header_end(available_data) {
                 let header_data = available_data[..=end_pos].to_vec();
                 let leftover_data = available_data[end_pos + 1..].to_vec();
 
@@ -135,22 +237,16 @@ impl PlyFile {
                 if let Ok(header) = PlyHeader::parse(&mut reader) {
                     let file_parser = ChunkedFileParser {
                         header,
-                        buffer: leftover_data,
                         current_element_index: 0,
                         elements_parsed_in_current: 0,
                     };
 
                     self.state = ParseState::ParsingElements {
                         parser: file_parser,
-                        current_element_index: 0,
                     };
-                    return;
+                    self.data_buffer = leftover_data;
                 }
             }
-
-            let mut temp_buffer = VecDeque::from(available_data);
-            temp_buffer.append(&mut self.data_buffer);
-            self.data_buffer = temp_buffer;
         }
     }
 }
@@ -158,48 +254,5 @@ impl PlyFile {
 impl Default for PlyFile {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl ElementReader {
-    pub fn next_chunk<T>(&mut self, ply_file: &mut PlyFile) -> Result<Option<Vec<T>>, PlyError>
-    where
-        T: for<'de> Deserialize<'de>,
-    {
-        if self.finished {
-            return Ok(None);
-        }
-
-        let result = ply_file.next_chunk::<T>()?;
-
-        if ply_file.is_element_complete() {
-            self.finished = true;
-        }
-
-        Ok(result)
-    }
-
-    pub fn is_finished(&self) -> bool {
-        self.finished
-    }
-}
-
-impl<T> PlyConstruct for Vec<T>
-where
-    T: for<'de> Deserialize<'de>,
-{
-    fn from_ply_file(ply_file: &mut PlyFile) -> Result<Self, PlyError> {
-        if !ply_file.is_header_ready() {
-            return Err(PlyError::InvalidHeader("Header not ready".to_string()));
-        }
-
-        let mut reader = ply_file.element_reader()?;
-        let mut result = Vec::new();
-
-        while let Some(chunk) = reader.next_chunk::<T>(ply_file)? {
-            result.extend(chunk);
-        }
-
-        Ok(result)
     }
 }

@@ -1,5 +1,3 @@
-//! PLY serializer implementation
-
 use crate::{PlyError, PlyFormat, PlyHeader, PropertyType, ScalarType};
 use serde::ser::{
     self, Serialize, SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant,
@@ -204,14 +202,14 @@ impl std::fmt::Display for PlyScalarValue {
 
 fn scalar_type_to_string(scalar_type: &ScalarType) -> &'static str {
     match scalar_type {
-        ScalarType::Char => "char",
-        ScalarType::UChar => "uchar",
-        ScalarType::Short => "short",
-        ScalarType::UShort => "ushort",
-        ScalarType::Int => "int",
-        ScalarType::UInt => "uint",
-        ScalarType::Float => "float",
-        ScalarType::Double => "double",
+        ScalarType::I8 => "char",
+        ScalarType::U8 => "uchar",
+        ScalarType::I16 => "short",
+        ScalarType::U16 => "ushort",
+        ScalarType::I32 => "int",
+        ScalarType::U32 => "uint",
+        ScalarType::F32 => "float",
+        ScalarType::F64 => "double",
     }
 }
 
@@ -731,15 +729,15 @@ mod tests {
                 count: 3,
                 properties: vec![
                     PropertyType::Scalar {
-                        data_type: ScalarType::Float,
+                        data_type: ScalarType::F32,
                         name: "x".to_string(),
                     },
                     PropertyType::Scalar {
-                        data_type: ScalarType::Float,
+                        data_type: ScalarType::F32,
                         name: "y".to_string(),
                     },
                     PropertyType::Scalar {
-                        data_type: ScalarType::Float,
+                        data_type: ScalarType::F32,
                         name: "z".to_string(),
                     },
                 ],

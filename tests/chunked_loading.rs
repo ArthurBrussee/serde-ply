@@ -1,7 +1,7 @@
 //! Comprehensive tests for chunked PLY loading functionality
 
 use serde::Deserialize;
-use serde_ply::{PlyError, PlyFile};
+use serde_ply::PlyFile;
 
 #[derive(Deserialize, Debug, PartialEq)]
 struct Vertex {
@@ -42,12 +42,11 @@ end_header
     let mut ply_file = PlyFile::new();
     ply_file.feed_data(ply_data.as_bytes());
 
-    assert!(ply_file.is_header_ready());
+    assert!(ply_file.header().is_some());
 
-    let mut vertex_reader = ply_file.element_reader().unwrap();
     let mut all_vertices = Vec::new();
 
-    while let Some(chunk) = vertex_reader.next_chunk::<Vertex>(&mut ply_file).unwrap() {
+    while let Some(chunk) = ply_file.next_chunk::<Vertex>().unwrap() {
         all_vertices.extend(chunk);
     }
 
@@ -98,12 +97,11 @@ end_header
         ply_file.feed_data(chunk);
     }
 
-    assert!(ply_file.is_header_ready());
+    assert!(ply_file.header().is_some());
 
-    let mut vertex_reader = ply_file.element_reader().unwrap();
     let mut all_vertices = Vec::new();
 
-    while let Some(chunk) = vertex_reader.next_chunk::<Vertex>(&mut ply_file).unwrap() {
+    while let Some(chunk) = ply_file.next_chunk::<Vertex>().unwrap() {
         all_vertices.extend(chunk);
     }
 
@@ -146,15 +144,11 @@ end_header
     let data_part = &ply_data.as_bytes()[header_end..];
 
     ply_file.feed_data(header_part);
-    assert!(ply_file.is_header_ready());
+    assert!(ply_file.header().is_some());
 
     ply_file.feed_data(data_part);
 
-    let mut vertex_reader = ply_file.element_reader().unwrap();
-    let vertices = vertex_reader
-        .next_chunk::<Vertex>(&mut ply_file)
-        .unwrap()
-        .unwrap();
+    let vertices = ply_file.next_chunk::<Vertex>().unwrap().unwrap();
 
     assert_eq!(vertices.len(), 1);
     assert_eq!(
@@ -189,23 +183,16 @@ end_header
     ply_file.feed_data(ply_data.as_bytes());
 
     // Parse all vertices first
-    let mut vertex_reader = ply_file.element_reader().unwrap();
     let mut all_vertices = Vec::new();
 
-    while let Some(chunk) = vertex_reader.next_chunk::<Vertex>(&mut ply_file).unwrap() {
+    while let Some(chunk) = ply_file.next_chunk::<Vertex>().unwrap() {
         all_vertices.extend(chunk);
     }
 
     assert_eq!(all_vertices.len(), 3);
-    assert!(vertex_reader.is_finished());
 
-    // Advance to faces
-    ply_file.advance_to_next_element().unwrap();
-
-    let mut face_reader = ply_file.element_reader().unwrap();
     let mut all_faces = Vec::new();
-
-    while let Some(chunk) = face_reader.next_chunk::<Face>(&mut ply_file).unwrap() {
+    while let Some(chunk) = ply_file.next_chunk::<Face>().unwrap() {
         all_faces.extend(chunk);
     }
 
@@ -237,12 +224,11 @@ fn test_binary_little_endian_chunked() {
         ply_file.feed_data(chunk);
     }
 
-    assert!(ply_file.is_header_ready());
+    assert!(ply_file.header().is_some());
 
-    let mut vertex_reader = ply_file.element_reader().unwrap();
     let mut all_vertices = Vec::new();
 
-    while let Some(chunk) = vertex_reader.next_chunk::<Vertex>(&mut ply_file).unwrap() {
+    while let Some(chunk) = ply_file.next_chunk::<Vertex>().unwrap() {
         all_vertices.extend(chunk);
     }
 
@@ -280,13 +266,8 @@ end_header
     let mut ply_file = PlyFile::new();
     ply_file.feed_data(ply_data.as_bytes());
 
-    let mut vertex_reader = ply_file.element_reader().unwrap();
-
     // Should get first vertex
-    let first_chunk = vertex_reader
-        .next_chunk::<Vertex>(&mut ply_file)
-        .unwrap()
-        .unwrap();
+    let first_chunk = ply_file.next_chunk::<Vertex>().unwrap().unwrap();
     assert_eq!(first_chunk.len(), 1);
     assert_eq!(
         first_chunk[0],
@@ -298,17 +279,14 @@ end_header
     );
 
     // No more complete vertices available
-    let second_chunk = vertex_reader.next_chunk::<Vertex>(&mut ply_file).unwrap();
+    let second_chunk = ply_file.next_chunk::<Vertex>().unwrap();
     assert!(second_chunk.is_none());
 
     // Add the missing vertex data
     ply_file.feed_data(b"4.0 5.0 6.0\n");
 
     // Now should get the second vertex
-    let third_chunk = vertex_reader
-        .next_chunk::<Vertex>(&mut ply_file)
-        .unwrap()
-        .unwrap();
+    let third_chunk = ply_file.next_chunk::<Vertex>().unwrap().unwrap();
     assert_eq!(third_chunk.len(), 1);
     assert_eq!(
         third_chunk[0],
@@ -318,21 +296,6 @@ end_header
             z: 6.0
         }
     );
-
-    assert!(vertex_reader.is_finished());
-}
-
-#[test]
-fn test_error_handling() {
-    let mut ply_file = PlyFile::new();
-
-    // Try to get reader before header is ready
-    let result = ply_file.element_reader();
-    assert!(result.is_err());
-
-    // Try to advance before header is ready
-    let result = ply_file.advance_to_next_element();
-    assert!(result.is_err());
 }
 
 #[test]
@@ -349,11 +312,9 @@ end_header
     let mut ply_file = PlyFile::new();
     ply_file.feed_data(ply_data.as_bytes());
 
-    let mut vertex_reader = ply_file.element_reader().unwrap();
-    let chunk = vertex_reader.next_chunk::<Vertex>(&mut ply_file).unwrap();
+    let chunk = ply_file.next_chunk::<Vertex>().unwrap();
 
     assert!(chunk.is_none());
-    assert!(vertex_reader.is_finished());
 }
 
 #[test]
@@ -374,10 +335,9 @@ end_header
         ply_file.feed_data(chunk);
     }
 
-    let mut face_reader = ply_file.element_reader().unwrap();
     let mut all_faces = Vec::new();
 
-    while let Some(chunk) = face_reader.next_chunk::<Face>(&mut ply_file).unwrap() {
+    while let Some(chunk) = ply_file.next_chunk::<Face>().unwrap() {
         all_faces.extend(chunk);
     }
 
@@ -404,11 +364,7 @@ end_header
     let mut ply_file = PlyFile::new();
     ply_file.feed_data(ply_data.as_bytes());
 
-    let mut vertex_reader = ply_file.element_reader().unwrap();
-    let vertices = vertex_reader
-        .next_chunk::<ColorVertex>(&mut ply_file)
-        .unwrap()
-        .unwrap();
+    let vertices = ply_file.next_chunk::<ColorVertex>().unwrap().unwrap();
 
     assert_eq!(vertices.len(), 1);
     assert_eq!(
@@ -443,13 +399,8 @@ end_header
         ply_file.feed_data(&[byte]);
     }
 
-    assert!(ply_file.is_header_ready());
-
-    let mut vertex_reader = ply_file.element_reader().unwrap();
-    let vertices = vertex_reader
-        .next_chunk::<Vertex>(&mut ply_file)
-        .unwrap()
-        .unwrap();
+    assert!(ply_file.header().is_some());
+    let vertices = ply_file.next_chunk::<Vertex>().unwrap().unwrap();
 
     assert_eq!(vertices.len(), 1);
     assert_eq!(
@@ -488,11 +439,10 @@ end_header
         ply_file.feed_data(chunk);
     }
 
-    let mut vertex_reader = ply_file.element_reader().unwrap();
     let mut all_vertices = Vec::new();
     let mut chunk_count = 0;
 
-    while let Some(chunk) = vertex_reader.next_chunk::<Vertex>(&mut ply_file).unwrap() {
+    while let Some(chunk) = ply_file.next_chunk::<Vertex>().unwrap() {
         chunk_count += 1;
         all_vertices.extend(chunk);
     }
@@ -519,6 +469,56 @@ end_header
             x: 99.0,
             y: 100.0,
             z: 101.0
+        }
+    );
+}
+
+#[test]
+fn test_interleaved_feeding() {
+    let ply_data = r#"ply
+format ascii 1.0
+element vertex 2
+property float x
+property float y
+property float z
+end_header
+1.0 2.0 3.0
+4.0 5.0 6.0
+"#;
+
+    let mut ply_file = PlyFile::new();
+    let chunks: Vec<&[u8]> = ply_data.as_bytes().chunks(10).collect();
+    let mut chunk_iter = chunks.iter();
+
+    // Feed until header ready
+    while ply_file.header().is_none() {
+        if let Some(chunk) = chunk_iter.next() {
+            ply_file.feed_data(chunk);
+        } else {
+            break;
+        }
+    }
+
+    assert!(ply_file.header().is_some());
+
+    // Interleaved vertex parsing
+    let mut all_vertices = Vec::new();
+
+    for chunk in chunk_iter {
+        ply_file.feed_data(chunk);
+
+        while let Some(chunk) = ply_file.next_chunk::<Vertex>().unwrap() {
+            all_vertices.extend(chunk);
+        }
+    }
+
+    assert_eq!(all_vertices.len(), 2);
+    assert_eq!(
+        all_vertices[0],
+        Vertex {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0
         }
     );
 }

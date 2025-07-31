@@ -5,7 +5,7 @@ use serde_ply::{PlyFormat, PlyHeader};
 use std::io::{BufReader, Cursor};
 
 #[derive(Deserialize, Debug, PartialEq)]
-struct Vertex3D {
+struct Vertex {
     x: f32,
     y: f32,
     z: f32,
@@ -68,17 +68,40 @@ end_header
     assert_eq!(header.format, PlyFormat::Ascii);
     assert_eq!(header.elements.len(), 1);
 
-    let vertices: Vec<Vertex3D> =
-        serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
+    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
     assert_eq!(vertices.len(), 3);
     assert_eq!(
         vertices[0],
-        Vertex3D {
+        Vertex {
             x: 0.0,
             y: 0.0,
             z: 0.0
         }
     );
+}
+
+#[test]
+fn test_ascii_incomplete() {
+    let ply_data = r#"ply
+format ascii 1.0
+element vertex 3
+property float x
+property float y
+property float z
+end_header
+0.0 0.0 0.0
+1.0 0.0
+0.5 1.0 0.0
+"#;
+
+    let cursor = Cursor::new(ply_data);
+    let mut reader = BufReader::new(cursor);
+    let header = PlyHeader::parse(&mut reader).unwrap();
+
+    assert_eq!(header.format, PlyFormat::Ascii);
+    assert_eq!(header.elements.len(), 1);
+    let res = serde_ply::parse_elements::<_, Vertex>(&mut reader, &header, "vertex");
+    assert!(res.is_err());
 }
 
 #[test]
@@ -117,8 +140,7 @@ end_header
     assert_eq!(header.format, PlyFormat::Ascii);
     assert_eq!(header.elements.len(), 2);
 
-    let vertices: Vec<Vertex3D> =
-        serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
+    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
     let faces: Vec<Face> = serde_ply::parse_elements(&mut reader, &header, "face").unwrap();
 
     assert_eq!(vertices.len(), 8);
@@ -224,8 +246,7 @@ end_header
     let mut reader = BufReader::new(cursor);
     let header = PlyHeader::parse(&mut reader).unwrap();
 
-    let vertices: Vec<Vertex3D> =
-        serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
+    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
     let faces: Vec<Face> = serde_ply::parse_elements(&mut reader, &header, "face").unwrap();
 
     assert_eq!(vertices.len(), 0);
@@ -249,8 +270,7 @@ end_header
     let mut reader = BufReader::new(cursor);
     let header = PlyHeader::parse(&mut reader).unwrap();
 
-    let vertices: Vec<Vertex3D> =
-        serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
+    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
     assert_eq!(vertices.len(), 2);
     assert_eq!(vertices[0].x, 150.0);
     assert!((vertices[0].y - (-0.23)).abs() < 0.001);
@@ -278,12 +298,11 @@ fn test_binary_little_endian() {
 
     assert_eq!(header.format, PlyFormat::BinaryLittleEndian);
 
-    let vertices: Vec<Vertex3D> =
-        serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
+    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
     assert_eq!(vertices.len(), 2);
     assert_eq!(
         vertices[0],
-        Vertex3D {
+        Vertex {
             x: 1.0,
             y: 2.0,
             z: 3.0
@@ -291,7 +310,7 @@ fn test_binary_little_endian() {
     );
     assert_eq!(
         vertices[1],
-        Vertex3D {
+        Vertex {
             x: 4.0,
             y: 5.0,
             z: 6.0
@@ -313,12 +332,11 @@ fn test_binary_big_endian() {
 
     assert_eq!(header.format, PlyFormat::BinaryBigEndian);
 
-    let vertices: Vec<Vertex3D> =
-        serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
+    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
     assert_eq!(vertices.len(), 1);
     assert_eq!(
         vertices[0],
-        Vertex3D {
+        Vertex {
             x: 1.5,
             y: 2.5,
             z: 3.5
@@ -398,12 +416,11 @@ end_header
     let mut reader = BufReader::new(cursor);
     let header = PlyHeader::parse(&mut reader).unwrap();
 
-    let vertices: Vec<Vertex3D> =
-        serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
+    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
     assert_eq!(vertices.len(), 2);
     assert_eq!(
         vertices[0],
-        Vertex3D {
+        Vertex {
             x: 1.0,
             y: 2.0,
             z: 3.0
@@ -428,40 +445,6 @@ end_header
     let mut reader = BufReader::new(cursor);
     let header = PlyHeader::parse(&mut reader).unwrap();
 
-    let result = serde_ply::parse_elements::<_, Vertex3D>(&mut reader, &header, "vertex");
+    let result = serde_ply::parse_elements::<_, Vertex>(&mut reader, &header, "vertex");
     assert!(result.is_err());
-}
-
-#[test]
-fn test_chunked_header_parsing() {
-    // Just test that chunked header parsing works
-    let ply_data = r#"ply
-format ascii 1.0
-element vertex 1
-property float x
-property float y
-property float z
-end_header
-1.0 2.0 3.0
-"#;
-
-    let mut header_parser = serde_ply::chunked_header_parser();
-
-    // Parse header in small chunks
-    let bytes = ply_data.as_bytes();
-    let mut pos = 0;
-
-    while pos < bytes.len() {
-        let chunk_end = (pos + 20).min(bytes.len());
-        let chunk = &bytes[pos..chunk_end];
-
-        if let Some(header) = header_parser.parse_from_bytes(chunk).unwrap() {
-            assert_eq!(header.format, PlyFormat::Ascii);
-            assert_eq!(header.elements.len(), 1);
-            break;
-        }
-        pos = chunk_end;
-    }
-
-    assert!(header_parser.is_complete());
 }

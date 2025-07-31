@@ -1,9 +1,8 @@
-//! PLY deserializer implementation
-
-use crate::{ElementDef, PlyError, PlyFormat, PlyHeader, PropertyType};
+use crate::{PlyError, PropertyType};
 use byteorder::{ByteOrder, ReadBytesExt};
 use serde::de::{self, DeserializeSeed, MapAccess, Visitor};
 
+use serde::de::value::StrDeserializer;
 use std::{io::BufRead, marker::PhantomData};
 
 pub trait FormatDeserializer<R> {
@@ -13,39 +12,24 @@ pub trait FormatDeserializer<R> {
         T: for<'de> serde::Deserialize<'de>;
 }
 
-pub struct AsciiElementDeserializer<R> {
-    reader: R,
-    elements_read: usize,
-    element_count: usize,
-    current_line_tokens: Vec<String>,
-    token_index: usize,
-    properties: Vec<PropertyType>,
+pub(crate) struct AsciiElementDeserializer<R> {
+    pub reader: R,
+    pub elements_read: usize,
+    pub element_count: usize,
+    // TODO: This current line tokens stuff is awful. We should just use the reader for actual parsing.
+    // That is, advance until whitespace get number etc. Ply files don't need anything complicated.
+    // When hitting a newline we should make sure we've read all the ply properties.
+    pub current_line_tokens: Vec<String>,
+    pub token_index: usize,
+    pub properties: Vec<PropertyType>,
 }
 
-pub struct BinaryElementDeserializer<R, E> {
-    reader: R,
-    elements_read: usize,
-    element_count: usize,
-    properties: Vec<PropertyType>,
-    _endian: PhantomData<E>,
-}
-
-/// Chunked header parser for async-compatible header parsing
-#[derive(Debug)]
-pub struct ChunkedHeaderParser {
-    buffer: Vec<u8>,
-    header_complete: bool,
-    header: Option<PlyHeader>,
-    leftover_data: Vec<u8>,
-}
-
-/// Multi-element chunked file parser for proper sequential element parsing
-#[derive(Debug)]
-pub struct ChunkedFileParser {
-    pub header: PlyHeader,
-    pub buffer: Vec<u8>,
-    pub current_element_index: usize,
-    pub elements_parsed_in_current: usize,
+pub(crate) struct BinaryElementDeserializer<R, E> {
+    pub reader: R,
+    pub elements_read: usize,
+    pub element_count: usize,
+    pub properties: Vec<PropertyType>,
+    pub _endian: PhantomData<E>,
 }
 
 impl<R: BufRead> FormatDeserializer<R> for AsciiElementDeserializer<R> {
@@ -68,10 +52,9 @@ impl<R: BufRead> FormatDeserializer<R> for AsciiElementDeserializer<R> {
             return Ok(None);
         }
 
+        self.elements_read += 1;
         self.read_ascii_line()?;
         let element = T::deserialize(AsciiDirectElementDeserializer { parent: self })?;
-        self.elements_read += 1;
-
         Ok(Some(element))
     }
 }
@@ -95,12 +78,11 @@ impl<R: BufRead, E: ByteOrder> FormatDeserializer<R> for BinaryElementDeserializ
             return Ok(None);
         }
 
+        self.elements_read += 1;
         let element = T::deserialize(BinaryDirectElementDeserializer {
             parent: self,
             _endian: PhantomData,
         })?;
-        self.elements_read += 1;
-
         Ok(Some(element))
     }
 }
@@ -110,56 +92,21 @@ impl<R: BufRead> AsciiElementDeserializer<R> {
         let mut line = String::new();
         self.reader.read_line(&mut line)?;
 
+        // TODO: This could pobably be more efficient, potentially even could just hold on to
+        // a slice of data. Lifetimes might be a mess but should work.
         self.current_line_tokens = line.split_whitespace().map(|s| s.to_string()).collect();
         self.token_index = 0;
         Ok(())
     }
 }
 
-/// Find the position of the last byte in "end_header\n"
-pub fn find_header_end(buffer: &[u8]) -> Option<usize> {
-    let pattern = b"end_header\n";
-
-    if buffer.len() < pattern.len() {
-        return None;
-    }
-
-    for i in 0..=(buffer.len() - pattern.len()) {
-        if &buffer[i..i + pattern.len()] == pattern {
-            return Some(i + pattern.len() - 1);
-        }
-    }
-
-    None
+pub(crate) struct AsciiDirectElementDeserializer<'a, R> {
+    pub parent: &'a mut AsciiElementDeserializer<R>,
 }
 
-/// Calculate the size in bytes of a binary element based on its properties
-fn calculate_binary_element_size(properties: &[PropertyType]) -> Result<usize, PlyError> {
-    let mut size = 0;
-
-    for property in properties {
-        match property {
-            PropertyType::Scalar { data_type, .. } => {
-                size += data_type.size_bytes();
-            }
-            PropertyType::List { .. } => {
-                return Err(PlyError::Serde(
-                    "List properties not supported in chunked binary parsing - use sequential parsing instead".to_string()
-                ));
-            }
-        }
-    }
-
-    Ok(size)
-}
-
-struct AsciiDirectElementDeserializer<'a, R> {
-    parent: &'a mut AsciiElementDeserializer<R>,
-}
-
-struct BinaryDirectElementDeserializer<'a, R, E> {
-    parent: &'a mut BinaryElementDeserializer<R, E>,
-    _endian: PhantomData<E>,
+pub(crate) struct BinaryDirectElementDeserializer<'a, R, E> {
+    pub parent: &'a mut BinaryElementDeserializer<R, E>,
+    pub _endian: PhantomData<E>,
 }
 
 impl<'de, 'a, R: BufRead> de::Deserializer<'de> for AsciiDirectElementDeserializer<'a, R> {
@@ -262,7 +209,7 @@ impl<'de, 'a, R: BufRead> MapAccess<'de> for AsciiDirectMapAccess<'a, R> {
             PropertyType::Scalar { name, .. } => name,
             PropertyType::List { name, .. } => name,
         };
-        seed.deserialize(str_to_deserializer(field_name)).map(Some)
+        seed.deserialize(StrDeserializer::new(field_name)).map(Some)
     }
 
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
@@ -270,8 +217,6 @@ impl<'de, 'a, R: BufRead> MapAccess<'de> for AsciiDirectMapAccess<'a, R> {
         V: DeserializeSeed<'de>,
     {
         self.current_property += 1;
-
-        // Let Serde decide what it wants - it will call the appropriate deserializer method
         seed.deserialize(AsciiValueDeserializer {
             parent: self.parent,
         })
@@ -294,7 +239,7 @@ impl<'de, 'a, R: BufRead, E: ByteOrder> MapAccess<'de> for BinaryDirectMapAccess
             PropertyType::Scalar { name, .. } => name,
             PropertyType::List { name, .. } => name,
         };
-        seed.deserialize(str_to_deserializer(field_name)).map(Some)
+        seed.deserialize(StrDeserializer::new(field_name)).map(Some)
     }
 
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
@@ -628,206 +573,19 @@ impl<'de, 'a, R: BufRead, E: ByteOrder> de::SeqAccess<'de> for BinarySeqAccess<'
     }
 }
 
-use serde::de::value::StrDeserializer;
+/// Find the position of the last byte in "end_header\n"
+pub fn find_header_end(buffer: &[u8]) -> Option<usize> {
+    let pattern = b"end_header\n";
 
-// Use a simple wrapper function instead of conflicting trait impl
-fn str_to_deserializer(s: &str) -> StrDeserializer<'_, PlyError> {
-    StrDeserializer::new(s)
-}
-
-impl Default for ChunkedHeaderParser {
-    fn default() -> Self {
-        Self::new()
+    if buffer.len() < pattern.len() {
+        return None;
     }
-}
 
-impl ChunkedHeaderParser {
-    pub fn new() -> Self {
-        Self {
-            buffer: Vec::new(),
-            header_complete: false,
-            header: None,
-            leftover_data: Vec::new(),
+    for i in 0..=(buffer.len() - pattern.len()) {
+        if &buffer[i..i + pattern.len()] == pattern {
+            return Some(i + pattern.len() - 1);
         }
     }
 
-    pub fn is_complete(&self) -> bool {
-        self.header_complete
-    }
-
-    /// Parse header from a chunk of bytes, returning the header if complete
-    pub fn parse_from_bytes(&mut self, chunk: &[u8]) -> Result<Option<PlyHeader>, PlyError> {
-        if self.header_complete {
-            return Ok(self.header.clone());
-        }
-
-        self.buffer.extend_from_slice(chunk);
-
-        if let Some(end_pos) = find_header_end(&self.buffer) {
-            let header_data = self.buffer[..=end_pos].to_vec();
-            self.leftover_data = self.buffer[end_pos + 1..].to_vec();
-
-            let cursor = std::io::Cursor::new(&header_data);
-            let mut reader = std::io::BufReader::new(cursor);
-            let header = PlyHeader::parse(&mut reader)?;
-
-            self.header = Some(header.clone());
-            self.header_complete = true;
-
-            Ok(Some(header))
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// Create a multi-element file parser that inherits leftover data
-    pub fn into_file_parser(self) -> Result<ChunkedFileParser, PlyError> {
-        // Parse header from header bytes
-        let cursor = std::io::Cursor::new(self.buffer);
-        let mut reader = std::io::BufReader::new(cursor);
-        let header = PlyHeader::parse(&mut reader)?;
-
-        Ok(ChunkedFileParser {
-            header,
-            buffer: self.leftover_data,
-            current_element_index: 0,
-            elements_parsed_in_current: 0,
-        })
-    }
-}
-
-impl ChunkedFileParser {
-    /// Parse elements of a specific type from buffered data, managing leftover data between element types
-    pub fn parse_chunk<T>(&mut self, element_name: &str) -> Result<Option<Vec<T>>, PlyError>
-    where
-        T: for<'de> serde::Deserialize<'de>,
-    {
-        // Find the element definition and clone it to avoid borrowing issues
-        let element_def = self
-            .header
-            .get_element(element_name)
-            .ok_or_else(|| PlyError::MissingElement(element_name.to_string()))?
-            .clone();
-
-        // Check if we've already finished parsing this element type
-        if self.elements_parsed_in_current >= element_def.count {
-            return Ok(None);
-        }
-
-        match self.header.format {
-            PlyFormat::Ascii => self.parse_ascii_chunk::<T>(&element_def),
-            PlyFormat::BinaryLittleEndian => {
-                self.parse_binary_chunk::<T, byteorder::LittleEndian>(&element_def)
-            }
-            PlyFormat::BinaryBigEndian => {
-                self.parse_binary_chunk::<T, byteorder::BigEndian>(&element_def)
-            }
-        }
-    }
-
-    /// Add more data to the parser buffer
-    pub fn add_data(&mut self, chunk: &[u8]) {
-        self.buffer.extend_from_slice(chunk);
-    }
-
-    /// Check if all elements of a specific type have been parsed
-    pub fn is_element_complete(&self, element_name: &str) -> bool {
-        if let Some(element_def) = self.header.get_element(element_name) {
-            self.elements_parsed_in_current >= element_def.count
-        } else {
-            false
-        }
-    }
-
-    /// Move to the next element type (call when current element type is complete)
-    pub fn advance_to_next_element(&mut self) {
-        self.current_element_index += 1;
-        self.elements_parsed_in_current = 0;
-    }
-
-    fn parse_ascii_chunk<T>(&mut self, element_def: &ElementDef) -> Result<Option<Vec<T>>, PlyError>
-    where
-        T: for<'de> serde::Deserialize<'de>,
-    {
-        let mut elements = Vec::new();
-
-        // Process complete lines from buffer
-        while let Some(newline_pos) = self.buffer.iter().position(|&b| b == b'\n') {
-            if self.elements_parsed_in_current >= element_def.count {
-                break;
-            }
-
-            let line_bytes = self.buffer.drain(..=newline_pos).collect::<Vec<u8>>();
-            let line = String::from_utf8_lossy(&line_bytes[..line_bytes.len() - 1]); // Remove newline
-
-            if !line.trim().is_empty() {
-                let element = self.parse_ascii_line::<T>(&line, &element_def.properties)?;
-                elements.push(element);
-                self.elements_parsed_in_current += 1;
-            }
-        }
-
-        if elements.is_empty() {
-            Ok(None) // No complete lines available yet
-        } else {
-            Ok(Some(elements))
-        }
-    }
-
-    fn parse_binary_chunk<T, E: ByteOrder>(
-        &mut self,
-        element_def: &ElementDef,
-    ) -> Result<Option<Vec<T>>, PlyError>
-    where
-        T: for<'de> serde::Deserialize<'de>,
-    {
-        let element_size = calculate_binary_element_size(&element_def.properties)?;
-        let remaining_elements = element_def.count - self.elements_parsed_in_current;
-        let available_elements = self.buffer.len() / element_size;
-        let elements_to_parse = remaining_elements.min(available_elements);
-
-        if elements_to_parse == 0 {
-            return Ok(None); // Not enough data for complete elements
-        }
-
-        let bytes_to_consume = elements_to_parse * element_size;
-        let element_bytes = self.buffer.drain(..bytes_to_consume).collect::<Vec<u8>>();
-
-        let mut elements = Vec::new();
-        let cursor = std::io::Cursor::new(element_bytes);
-        let mut deserializer = BinaryElementDeserializer::<_, E>::new(
-            cursor,
-            elements_to_parse,
-            element_def.properties.clone(),
-        );
-
-        while let Some(element) = deserializer.next_element::<T>()? {
-            elements.push(element);
-            self.elements_parsed_in_current += 1;
-        }
-
-        Ok(Some(elements))
-    }
-
-    fn parse_ascii_line<T>(&self, line: &str, properties: &[PropertyType]) -> Result<T, PlyError>
-    where
-        T: for<'de> serde::Deserialize<'de>,
-    {
-        let tokens: Vec<String> = line.split_whitespace().map(|s| s.to_string()).collect();
-
-        let mut deserializer = AsciiElementDeserializer {
-            reader: std::io::Cursor::new(""),
-            elements_read: 0,
-            element_count: 1,
-            current_line_tokens: tokens,
-            token_index: 0,
-            properties: properties.to_vec(),
-        };
-
-        let direct_deserializer = AsciiDirectElementDeserializer {
-            parent: &mut deserializer,
-        };
-
-        T::deserialize(direct_deserializer)
-    }
+    None
 }

@@ -60,27 +60,27 @@ fn test_complete_binary_ply_file() {
                 count: vertices.len(),
                 properties: vec![
                     PropertyType::Scalar {
-                        data_type: ScalarType::Float,
+                        data_type: ScalarType::F32,
                         name: "x".to_string(),
                     },
                     PropertyType::Scalar {
-                        data_type: ScalarType::Float,
+                        data_type: ScalarType::F32,
                         name: "y".to_string(),
                     },
                     PropertyType::Scalar {
-                        data_type: ScalarType::Float,
+                        data_type: ScalarType::F32,
                         name: "z".to_string(),
                     },
                     PropertyType::Scalar {
-                        data_type: ScalarType::UChar,
+                        data_type: ScalarType::U8,
                         name: "red".to_string(),
                     },
                     PropertyType::Scalar {
-                        data_type: ScalarType::UChar,
+                        data_type: ScalarType::U8,
                         name: "green".to_string(),
                     },
                     PropertyType::Scalar {
-                        data_type: ScalarType::UChar,
+                        data_type: ScalarType::U8,
                         name: "blue".to_string(),
                     },
                 ],
@@ -89,8 +89,8 @@ fn test_complete_binary_ply_file() {
                 name: "face".to_string(),
                 count: faces.len(),
                 properties: vec![PropertyType::List {
-                    count_type: ScalarType::UChar,
-                    data_type: ScalarType::UInt,
+                    count_type: ScalarType::U8,
+                    data_type: ScalarType::U32,
                     name: "vertex_indices".to_string(),
                 }],
             },
@@ -150,27 +150,27 @@ fn test_binary_round_trip() {
             count: original_vertices.len(),
             properties: vec![
                 PropertyType::Scalar {
-                    data_type: ScalarType::Float,
+                    data_type: ScalarType::F32,
                     name: "x".to_string(),
                 },
                 PropertyType::Scalar {
-                    data_type: ScalarType::Float,
+                    data_type: ScalarType::F32,
                     name: "y".to_string(),
                 },
                 PropertyType::Scalar {
-                    data_type: ScalarType::Float,
+                    data_type: ScalarType::F32,
                     name: "z".to_string(),
                 },
                 PropertyType::Scalar {
-                    data_type: ScalarType::UChar,
+                    data_type: ScalarType::U8,
                     name: "red".to_string(),
                 },
                 PropertyType::Scalar {
-                    data_type: ScalarType::UChar,
+                    data_type: ScalarType::U8,
                     name: "green".to_string(),
                 },
                 PropertyType::Scalar {
-                    data_type: ScalarType::UChar,
+                    data_type: ScalarType::U8,
                     name: "blue".to_string(),
                 },
             ],
@@ -229,27 +229,27 @@ fn test_ascii_round_trip() {
             count: original_vertices.len(),
             properties: vec![
                 PropertyType::Scalar {
-                    data_type: ScalarType::Float,
+                    data_type: ScalarType::F32,
                     name: "x".to_string(),
                 },
                 PropertyType::Scalar {
-                    data_type: ScalarType::Float,
+                    data_type: ScalarType::F32,
                     name: "y".to_string(),
                 },
                 PropertyType::Scalar {
-                    data_type: ScalarType::Float,
+                    data_type: ScalarType::F32,
                     name: "z".to_string(),
                 },
                 PropertyType::Scalar {
-                    data_type: ScalarType::UChar,
+                    data_type: ScalarType::U8,
                     name: "red".to_string(),
                 },
                 PropertyType::Scalar {
-                    data_type: ScalarType::UChar,
+                    data_type: ScalarType::U8,
                     name: "green".to_string(),
                 },
                 PropertyType::Scalar {
-                    data_type: ScalarType::UChar,
+                    data_type: ScalarType::U8,
                     name: "blue".to_string(),
                 },
             ],
@@ -293,15 +293,15 @@ fn test_simple_ascii_output() {
             count: vertices.len(),
             properties: vec![
                 PropertyType::Scalar {
-                    data_type: ScalarType::Float,
+                    data_type: ScalarType::F32,
                     name: "x".to_string(),
                 },
                 PropertyType::Scalar {
-                    data_type: ScalarType::Float,
+                    data_type: ScalarType::F32,
                     name: "y".to_string(),
                 },
                 PropertyType::Scalar {
-                    data_type: ScalarType::Float,
+                    data_type: ScalarType::F32,
                     name: "z".to_string(),
                 },
             ],
@@ -335,15 +335,15 @@ fn test_to_string_rejects_binary_format() {
             count: vertices.len(),
             properties: vec![
                 PropertyType::Scalar {
-                    data_type: ScalarType::Float,
+                    data_type: ScalarType::F32,
                     name: "x".to_string(),
                 },
                 PropertyType::Scalar {
-                    data_type: ScalarType::Float,
+                    data_type: ScalarType::F32,
                     name: "y".to_string(),
                 },
                 PropertyType::Scalar {
-                    data_type: ScalarType::Float,
+                    data_type: ScalarType::F32,
                     name: "z".to_string(),
                 },
             ],
