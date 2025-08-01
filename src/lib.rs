@@ -37,6 +37,9 @@ pub enum PlyError {
     #[error("Missing required element: {0}")]
     MissingElement(String),
 
+    #[error("Not enough data available")]
+    NotEnoughData,
+
     #[error("Serde error: {0}")]
     Serde(String),
 }

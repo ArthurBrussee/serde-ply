@@ -148,33 +148,16 @@ fn benchmark_chunked_parsing(c: &mut Criterion) {
 
     group.bench_function("chunked_4k", |b| {
         b.iter(|| {
-            let mut header_parser = serde_ply::chunked_header_parser();
-            let mut pos = 0;
+            let mut ply_file = serde_ply::PlyFile::new();
             let chunk_size = 4096;
 
-            // Parse header
-            while pos < binary_data.len() {
-                let end = (pos + chunk_size).min(binary_data.len());
-                let chunk = &binary_data[pos..end];
-                if header_parser.parse_from_bytes(chunk).unwrap().is_some() {
-                    break;
-                }
-                pos = end;
+            // Feed data in chunks
+            for chunk in binary_data.chunks(chunk_size) {
+                ply_file.feed_data(chunk);
             }
 
-            let mut file_parser = header_parser.into_file_parser().unwrap();
-
-            // Parse elements
-            while pos < binary_data.len() {
-                let end = (pos + chunk_size).min(binary_data.len());
-                let chunk = &binary_data[pos..end];
-                file_parser.add_data(chunk);
-                let _ = file_parser.parse_chunk::<Vertex>("vertex").unwrap();
-                pos = end;
-                if file_parser.is_element_complete("vertex") {
-                    break;
-                }
-            }
+            // Parse all vertices
+            let _vertices = ply_file.next_chunk::<Vertex>().unwrap().unwrap();
         });
     });
 

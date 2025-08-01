@@ -6,27 +6,6 @@ use crate::{
 use byteorder::ByteOrder;
 use serde::Deserialize;
 
-/// TODO: Instead of doing this, we should track sizes WHILE parsing, as then we know the size of lists.
-/// Calculate the size in bytes of a binary element based on its properties
-fn calculate_binary_element_size(properties: &[PropertyType]) -> Result<usize, PlyError> {
-    let mut size = 0;
-
-    for property in properties {
-        match property {
-            PropertyType::Scalar { data_type, .. } => {
-                size += data_type.size_bytes();
-            }
-            PropertyType::List { .. } => {
-                return Err(PlyError::Serde(
-                    "List properties not supported in chunked binary parsing - use sequential parsing instead".to_string()
-                ));
-            }
-        }
-    }
-
-    Ok(size)
-}
-
 #[derive(Debug)]
 pub(crate) struct ChunkedFileParser {
     pub header: PlyHeader,
@@ -132,35 +111,44 @@ impl ChunkedFileParser {
     where
         T: for<'de> serde::Deserialize<'de>,
     {
-        // TODO: This doesn't work with lists to calculate a binary size upfront. We should
-        // instead properly handle early EOF in deserializer.next_element(). This is
-        // important anyway for correctness.
-        let element_size = calculate_binary_element_size(&element_def.properties)?;
+        let mut elements = Vec::new();
+        let mut cursor = std::io::Cursor::new(buffer);
+        let mut total_bytes_consumed = 0;
         let remaining_elements = element_def.count - self.elements_parsed_in_current;
-        let available_elements = buffer.len() / element_size;
-        let elements_to_parse = remaining_elements.min(available_elements);
 
-        if elements_to_parse == 0 {
-            return Ok(ParseChunk::Advance(Vec::new(), 0)); // Not enough data for complete elements
-        }
+        // Parse elements one by one until we hit UnexpectedEof or finish
+        for _ in 0..remaining_elements {
+            let position_before = cursor.position();
 
-        let bytes_to_consume = elements_to_parse * element_size;
+            // Create a single-element deserializer
+            let mut deserializer =
+                BinaryElementDeserializer::<_, E>::new(cursor, 1, element_def.properties.clone());
 
-        let mut elements = Vec::with_capacity(elements_to_parse);
-        let cursor = std::io::Cursor::new(&buffer[..bytes_to_consume]);
-        let mut deserializer = BinaryElementDeserializer::<_, E>::new(
-            cursor,
-            elements_to_parse,
-            element_def.properties.clone(),
-        );
+            match deserializer.next_element::<T>() {
+                Ok(Some(element)) => {
+                    elements.push(element);
+                    let position_after = deserializer.reader.position();
+                    let bytes_consumed = position_after - position_before;
+                    total_bytes_consumed += bytes_consumed as usize;
 
-        while let Some(element) = deserializer.next_element::<T>()? {
-            elements.push(element);
+                    // Update cursor for next iteration
+                    cursor = deserializer.reader;
+                }
+                Ok(None) => break, // Shouldn't happen with count=1
+                Err(PlyError::Io(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                    // Not enough data for this element, stop here
+                    break;
+                }
+                Err(PlyError::NotEnoughData) => {
+                    // Not enough data for this element, stop here
+                    break;
+                }
+                Err(e) => return Err(e), // Other errors
+            }
         }
 
         self.elements_parsed_in_current += elements.len();
-
-        Ok(ParseChunk::Advance(elements, bytes_to_consume))
+        Ok(ParseChunk::Advance(elements, total_bytes_consumed))
     }
 
     fn parse_ascii_line<T>(&self, line: &str, properties: &[PropertyType]) -> Result<T, PlyError>

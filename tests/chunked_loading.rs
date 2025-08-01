@@ -453,3 +453,81 @@ end_header
         }
     );
 }
+
+/// Test binary list properties with incomplete data
+#[test]
+fn test_binary_incomplete_lists() {
+    let header = "ply\nformat binary_little_endian 1.0\nelement face 2\nproperty list uchar int vertex_indices\nend_header\n";
+
+    let mut binary_data = Vec::new();
+    binary_data.extend_from_slice(header.as_bytes());
+
+    // Add complete first face: count=3, indices=[0, 1, 2]
+    binary_data.push(3u8); // count
+    binary_data.extend_from_slice(&0i32.to_le_bytes()); // index 0
+    binary_data.extend_from_slice(&1i32.to_le_bytes()); // index 1
+    binary_data.extend_from_slice(&2i32.to_le_bytes()); // index 2
+
+    // Add incomplete second face: count=4, but only 2 indices
+    binary_data.push(4u8); // count
+    binary_data.extend_from_slice(&0i32.to_le_bytes()); // index 0
+    binary_data.extend_from_slice(&1i32.to_le_bytes()); // index 1
+                                                        // Missing 2 more indices
+
+    let mut ply_file = PlyFile::new();
+    ply_file.feed_data(&binary_data);
+
+    // Should parse only the first complete face
+    let faces1 = ply_file.next_chunk::<Face>().unwrap().unwrap();
+    assert_eq!(faces1.len(), 1);
+    assert_eq!(faces1[0].vertex_indices, vec![0, 1, 2]);
+
+    // Call again - should return None (incomplete second face)
+    assert!(ply_file.next_chunk::<Face>().unwrap().is_none());
+
+    // Add missing data for second face
+    binary_data.extend_from_slice(&2i32.to_le_bytes()); // index 2
+    binary_data.extend_from_slice(&3i32.to_le_bytes()); // index 3
+
+    ply_file.feed_data(&binary_data[binary_data.len() - 8..]);
+
+    // Now should get the second face
+    let faces2 = ply_file.next_chunk::<Face>().unwrap().unwrap();
+    assert_eq!(faces2.len(), 1);
+    assert_eq!(faces2[0].vertex_indices, vec![0, 1, 2, 3]);
+}
+
+/// Test binary list properties with chunked loading
+#[test]
+fn test_binary_lists() {
+    let header = "ply\nformat binary_little_endian 1.0\nelement face 2\nproperty list uchar int vertex_indices\nend_header\n";
+
+    let mut binary_data = Vec::new();
+    binary_data.extend_from_slice(header.as_bytes());
+
+    // Add face data: [3, 0, 1, 2] and [4, 0, 1, 2, 3]
+    // First face: count=3, indices=[0, 1, 2]
+    binary_data.push(3u8); // count
+    binary_data.extend_from_slice(&0i32.to_le_bytes()); // index 0
+    binary_data.extend_from_slice(&1i32.to_le_bytes()); // index 1
+    binary_data.extend_from_slice(&2i32.to_le_bytes()); // index 2
+
+    // Second face: count=4, indices=[0, 1, 2, 3]
+    binary_data.push(4u8); // count
+    binary_data.extend_from_slice(&0i32.to_le_bytes()); // index 0
+    binary_data.extend_from_slice(&1i32.to_le_bytes()); // index 1
+    binary_data.extend_from_slice(&2i32.to_le_bytes()); // index 2
+    binary_data.extend_from_slice(&3i32.to_le_bytes()); // index 3
+
+    let mut ply_file = PlyFile::new();
+
+    // Feed in small chunks to test list boundary detection
+    for chunk in binary_data.chunks(6) {
+        ply_file.feed_data(chunk);
+    }
+
+    let faces = ply_file.next_chunk::<Face>().unwrap().unwrap();
+    assert_eq!(faces.len(), 2);
+    assert_eq!(faces[0].vertex_indices, vec![0, 1, 2]);
+    assert_eq!(faces[1].vertex_indices, vec![0, 1, 2, 3]);
+}
