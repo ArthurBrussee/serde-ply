@@ -104,7 +104,7 @@ fn benchmark_parsing(c: &mut Criterion) {
             let mut reader = std::io::BufReader::new(cursor);
             let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
             let _vertices: Vec<Vertex> =
-                serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
+                serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
         });
     });
 
@@ -118,7 +118,7 @@ fn benchmark_parsing(c: &mut Criterion) {
             let mut reader = std::io::BufReader::new(cursor);
             let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
             let _vertices: Vec<VertexWithColor> =
-                serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
+                serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
         });
     });
 
@@ -132,7 +132,7 @@ fn benchmark_parsing(c: &mut Criterion) {
             let mut reader = std::io::BufReader::new(cursor);
             let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
             let _vertices: Vec<Vertex> =
-                serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
+                serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
         });
     });
 

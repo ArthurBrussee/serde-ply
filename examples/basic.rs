@@ -42,8 +42,8 @@ end_header
     let mut reader = BufReader::new(cursor);
     let header = serde_ply::PlyHeader::parse(&mut reader)?;
 
-    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header, "vertex")?;
-    let faces: Vec<Face> = serde_ply::parse_elements(&mut reader, &header, "face")?;
+    let vertices: Vec<Vertex> = serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex")?;
+    let faces: Vec<Face> = serde_ply::PlyFile::parse_elements(&mut reader, &header, "face")?;
 
     println!(
         "Parsed {} vertices and {} faces",
@@ -91,7 +91,7 @@ end_header
         obj_info: vec![],
     };
 
-    let ply_string = serde_ply::to_string(&output_header, &(&vertices, &faces))?;
+    let ply_string = serde_ply::PlyFile::to_string(&output_header, &vertices)?;
     println!("Generated PLY:\n{ply_string}");
 
     Ok(())

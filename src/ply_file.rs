@@ -1,10 +1,13 @@
 use crate::{
-    de::{find_header_end, AsciiDirectElementDeserializer},
-    AsciiElementDeserializer, BinaryElementDeserializer, ElementDef, FormatDeserializer, PlyError,
-    PlyFormat, PlyHeader, PropertyType,
+    de::{
+        find_header_end, AsciiDirectElementDeserializer, AsciiElementDeserializer,
+        BinaryElementDeserializer, FormatDeserializer,
+    },
+    ElementDef, PlyError, PlyFormat, PlyHeader, PropertyType,
 };
 use byteorder::ByteOrder;
 use serde::Deserialize;
+use std::io::BufRead;
 
 #[derive(Debug)]
 pub(crate) struct ChunkedFileParser {
@@ -271,6 +274,110 @@ impl PlyFile {
                 }
             }
         }
+    }
+}
+
+impl PlyFile {
+    /// Serialize elements to a PLY format string
+    pub fn to_string<T>(header: &PlyHeader, elements: &[T]) -> Result<String, PlyError>
+    where
+        T: serde::Serialize,
+    {
+        if !matches!(header.format, PlyFormat::Ascii) {
+            return Err(PlyError::UnsupportedFormat(
+                "to_string only supports ASCII format - use to_bytes for binary formats"
+                    .to_string(),
+            ));
+        }
+
+        let mut buffer = Vec::new();
+        crate::ser::elements_to_writer(&mut buffer, header, elements)?;
+        String::from_utf8(buffer).map_err(|e| PlyError::Serde(format!("UTF-8 encoding error: {e}")))
+    }
+
+    /// Serialize elements to a PLY format byte vector
+    pub fn to_bytes<T>(header: &PlyHeader, elements: &[T]) -> Result<Vec<u8>, PlyError>
+    where
+        T: serde::Serialize,
+    {
+        crate::ser::elements_to_bytes(header, elements)
+    }
+
+    /// Serialize elements to a writer
+    pub fn to_writer<W, T>(writer: W, header: &PlyHeader, elements: &[T]) -> Result<(), PlyError>
+    where
+        W: std::io::Write,
+        T: serde::Serialize,
+    {
+        crate::ser::elements_to_writer(writer, header, elements)
+    }
+
+    pub fn parse_elements<R, T>(
+        reader: R,
+        header: &PlyHeader,
+        element_name: &str,
+    ) -> Result<Vec<T>, PlyError>
+    where
+        R: BufRead,
+        T: for<'de> serde::Deserialize<'de>,
+    {
+        let element_def = header
+            .get_element(element_name)
+            .ok_or_else(|| PlyError::MissingElement(element_name.to_string()))?;
+
+        let properties = element_def.properties.to_vec();
+        let mut results = Vec::new();
+
+        match header.format {
+            PlyFormat::Ascii => {
+                let mut deserializer =
+                    AsciiElementDeserializer::new(reader, element_def.count, properties);
+                while let Some(element) = deserializer.next_element::<T>()? {
+                    results.push(element);
+                }
+            }
+            PlyFormat::BinaryLittleEndian => {
+                let mut deserializer = BinaryElementDeserializer::<_, byteorder::LittleEndian>::new(
+                    reader,
+                    element_def.count,
+                    properties,
+                );
+                while let Some(element) = deserializer.next_element::<T>()? {
+                    results.push(element);
+                }
+            }
+            PlyFormat::BinaryBigEndian => {
+                let mut deserializer = BinaryElementDeserializer::<_, byteorder::BigEndian>::new(
+                    reader,
+                    element_def.count,
+                    properties,
+                );
+                while let Some(element) = deserializer.next_element::<T>()? {
+                    results.push(element);
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
+    pub fn elements_to_writer<W, T>(
+        writer: W,
+        header: &PlyHeader,
+        elements: &[T],
+    ) -> Result<(), PlyError>
+    where
+        W: std::io::Write,
+        T: serde::Serialize,
+    {
+        crate::ser::elements_to_writer(writer, header, elements)
+    }
+
+    pub fn elements_to_bytes<T>(header: &PlyHeader, elements: &[T]) -> Result<Vec<u8>, PlyError>
+    where
+        T: serde::Serialize,
+    {
+        crate::ser::elements_to_bytes(header, elements)
     }
 }
 

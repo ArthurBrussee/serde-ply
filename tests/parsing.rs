@@ -68,7 +68,8 @@ end_header
     assert_eq!(header.format, PlyFormat::Ascii);
     assert_eq!(header.elements.len(), 1);
 
-    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
+    let vertices: Vec<Vertex> =
+        serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
     assert_eq!(vertices.len(), 3);
     assert_eq!(
         vertices[0],
@@ -100,8 +101,8 @@ end_header
 
     assert_eq!(header.format, PlyFormat::Ascii);
     assert_eq!(header.elements.len(), 1);
-    let res = serde_ply::parse_elements::<_, Vertex>(&mut reader, &header, "vertex");
-    assert!(res.is_err());
+    let result = serde_ply::PlyFile::parse_elements::<_, Vertex>(&mut reader, &header, "vertex");
+    assert!(result.is_err());
 }
 
 #[test]
@@ -140,8 +141,10 @@ end_header
     assert_eq!(header.format, PlyFormat::Ascii);
     assert_eq!(header.elements.len(), 2);
 
-    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
-    let faces: Vec<Face> = serde_ply::parse_elements(&mut reader, &header, "face").unwrap();
+    let vertices: Vec<Vertex> =
+        serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
+    let faces: Vec<Face> =
+        serde_ply::PlyFile::parse_elements(&mut reader, &header, "face").unwrap();
 
     assert_eq!(vertices.len(), 8);
     assert_eq!(faces.len(), 6);
@@ -177,7 +180,8 @@ end_header
     let mut reader = BufReader::new(cursor);
     let header = PlyHeader::parse(&mut reader).unwrap();
 
-    let points: Vec<AllTypes> = serde_ply::parse_elements(&mut reader, &header, "point").unwrap();
+    let points: Vec<AllTypes> =
+        serde_ply::PlyFile::parse_elements(&mut reader, &header, "point").unwrap();
     assert_eq!(points.len(), 1);
 
     let point = &points[0];
@@ -220,8 +224,9 @@ end_header
     let header = PlyHeader::parse(&mut reader).unwrap();
 
     let vertices: Vec<VertexWithNormal> =
-        serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
-    let faces: Vec<Face> = serde_ply::parse_elements(&mut reader, &header, "face").unwrap();
+        serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
+    let faces: Vec<Face> =
+        serde_ply::PlyFile::parse_elements(&mut reader, &header, "face").unwrap();
 
     assert_eq!(vertices.len(), 5);
     assert_eq!(faces.len(), 3);
@@ -246,8 +251,10 @@ end_header
     let mut reader = BufReader::new(cursor);
     let header = PlyHeader::parse(&mut reader).unwrap();
 
-    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
-    let faces: Vec<Face> = serde_ply::parse_elements(&mut reader, &header, "face").unwrap();
+    let vertices: Vec<Vertex> =
+        serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
+    let faces: Vec<Face> =
+        serde_ply::PlyFile::parse_elements(&mut reader, &header, "face").unwrap();
 
     assert_eq!(vertices.len(), 0);
     assert_eq!(faces.len(), 0);
@@ -270,7 +277,8 @@ end_header
     let mut reader = BufReader::new(cursor);
     let header = PlyHeader::parse(&mut reader).unwrap();
 
-    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
+    let vertices: Vec<Vertex> =
+        serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
     assert_eq!(vertices.len(), 2);
     assert_eq!(vertices[0].x, 150.0);
     assert!((vertices[0].y - (-0.23)).abs() < 0.001);
@@ -298,7 +306,8 @@ fn test_binary_little_endian() {
 
     assert_eq!(header.format, PlyFormat::BinaryLittleEndian);
 
-    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
+    let vertices: Vec<Vertex> =
+        serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
     assert_eq!(vertices.len(), 2);
     assert_eq!(
         vertices[0],
@@ -332,7 +341,8 @@ fn test_binary_big_endian() {
 
     assert_eq!(header.format, PlyFormat::BinaryBigEndian);
 
-    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
+    let vertices: Vec<Vertex> =
+        serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
     assert_eq!(vertices.len(), 1);
     assert_eq!(
         vertices[0],
@@ -359,7 +369,8 @@ end_header
     let mut reader = BufReader::new(cursor);
     let header = PlyHeader::parse(&mut reader).unwrap();
 
-    let faces: Vec<Face> = serde_ply::parse_elements(&mut reader, &header, "face").unwrap();
+    let faces: Vec<Face> =
+        serde_ply::PlyFile::parse_elements(&mut reader, &header, "face").unwrap();
     assert_eq!(faces.len(), 2);
     assert_eq!(faces[0].vertex_indices, vec![0, 1, 2]);
     assert_eq!(faces[1].vertex_indices, vec![0, 1, 2, 3]);
@@ -391,7 +402,7 @@ end_header
     let header = PlyHeader::parse(&mut reader).unwrap();
 
     let vertices: Vec<VertexWithList> =
-        serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
+        serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
     assert_eq!(vertices.len(), 1);
     assert_eq!(vertices[0].x, 1.0);
     assert_eq!(vertices[0].y, 2.0);
@@ -416,7 +427,8 @@ end_header
     let mut reader = BufReader::new(cursor);
     let header = PlyHeader::parse(&mut reader).unwrap();
 
-    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header, "vertex").unwrap();
+    let vertices: Vec<Vertex> =
+        serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
     assert_eq!(vertices.len(), 2);
     assert_eq!(
         vertices[0],
@@ -445,6 +457,6 @@ end_header
     let mut reader = BufReader::new(cursor);
     let header = PlyHeader::parse(&mut reader).unwrap();
 
-    let result = serde_ply::parse_elements::<_, Vertex>(&mut reader, &header, "vertex");
+    let result = serde_ply::PlyFile::parse_elements::<_, Vertex>(&mut reader, &header, "vertex");
     assert!(result.is_err());
 }

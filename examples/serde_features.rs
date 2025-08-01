@@ -57,7 +57,7 @@ property uchar blue
 property float normal_x
 end_header
 1.0 2.0 3.0 255 128 64 0.707
-4.0 5.0 6.0 200 100 50
+4.0 5.0 6.0 200 100 50 -0.707
 "#;
 
     use std::io::{BufReader, Cursor};
@@ -65,7 +65,7 @@ end_header
     let mut reader = BufReader::new(cursor);
     let header = serde_ply::PlyHeader::parse(&mut reader)?;
 
-    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header, "vertex")?;
+    let vertices: Vec<Vertex> = serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex")?;
 
     for (i, vertex) in vertices.iter().enumerate() {
         println!(

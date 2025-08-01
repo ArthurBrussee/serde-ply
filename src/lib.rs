@@ -1,21 +1,15 @@
 //! High-performance PLY parser with chunked loading support
 
-pub mod de;
-pub mod ply_file;
-pub mod ser;
+mod de;
+mod ply_file;
+mod ser;
 
-pub use de::FormatDeserializer;
 pub use ply_file::PlyFile;
-pub use ser::{
-    elements_to_bytes, elements_to_writer, to_bytes, to_string, to_writer, PlySerializer,
-};
 
 use std::io::BufRead;
 use std::str::FromStr;
 use std::{fmt, string::FromUtf8Error};
 use thiserror::Error;
-
-use crate::de::{AsciiElementDeserializer, BinaryElementDeserializer};
 
 #[derive(Error, Debug)]
 pub enum PlyError {
@@ -292,53 +286,4 @@ impl PlyHeader {
     pub fn has_element(&self, name: &str) -> bool {
         self.elements.iter().any(|e| e.name == name)
     }
-}
-
-pub fn parse_elements<R, T>(
-    reader: R,
-    header: &PlyHeader,
-    element_name: &str,
-) -> Result<Vec<T>, PlyError>
-where
-    R: BufRead,
-    T: for<'de> serde::Deserialize<'de>,
-{
-    let element_def = header
-        .get_element(element_name)
-        .ok_or_else(|| PlyError::MissingElement(element_name.to_string()))?;
-
-    let properties = element_def.properties.to_vec();
-    let mut results = Vec::new();
-
-    match header.format {
-        PlyFormat::Ascii => {
-            let mut deserializer =
-                AsciiElementDeserializer::new(reader, element_def.count, properties);
-            while let Some(element) = deserializer.next_element::<T>()? {
-                results.push(element);
-            }
-        }
-        PlyFormat::BinaryLittleEndian => {
-            let mut deserializer = BinaryElementDeserializer::<_, byteorder::LittleEndian>::new(
-                reader,
-                element_def.count,
-                properties,
-            );
-            while let Some(element) = deserializer.next_element::<T>()? {
-                results.push(element);
-            }
-        }
-        PlyFormat::BinaryBigEndian => {
-            let mut deserializer = BinaryElementDeserializer::<_, byteorder::BigEndian>::new(
-                reader,
-                element_def.count,
-                properties,
-            );
-            while let Some(element) = deserializer.next_element::<T>()? {
-                results.push(element);
-            }
-        }
-    }
-
-    Ok(results)
 }

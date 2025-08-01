@@ -610,16 +610,6 @@ impl<W: Write> SerializeStructVariant for &mut PlySerializer<W> {
     }
 }
 
-pub fn to_writer<W, T>(writer: W, header: &PlyHeader, value: &T) -> Result<(), PlyError>
-where
-    W: Write,
-    T: Serialize,
-{
-    let mut serializer = PlySerializer::with_header(writer, header.clone());
-    serializer.write_header()?;
-    value.serialize(&mut serializer)
-}
-
 pub fn elements_to_writer<W, T>(
     writer: W,
     header: &PlyHeader,
@@ -639,30 +629,6 @@ where
 {
     let mut buffer = Vec::new();
     elements_to_writer(&mut buffer, header, elements)?;
-    Ok(buffer)
-}
-
-pub fn to_string<T>(header: &PlyHeader, value: &T) -> Result<String, PlyError>
-where
-    T: Serialize,
-{
-    if !matches!(header.format, PlyFormat::Ascii) {
-        return Err(PlyError::UnsupportedFormat(
-            "to_string only supports ASCII format - use to_bytes for binary formats".to_string(),
-        ));
-    }
-
-    let mut buffer = Vec::new();
-    to_writer(&mut buffer, header, value)?;
-    String::from_utf8(buffer).map_err(|e| PlyError::Serde(format!("UTF-8 encoding error: {e}")))
-}
-
-pub fn to_bytes<T>(header: &PlyHeader, value: &T) -> Result<Vec<u8>, PlyError>
-where
-    T: Serialize,
-{
-    let mut buffer = Vec::new();
-    to_writer(&mut buffer, header, value)?;
     Ok(buffer)
 }
 

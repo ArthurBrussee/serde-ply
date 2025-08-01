@@ -508,7 +508,9 @@ impl<'de, 'a, R: BufRead, E: ByteOrder> de::Deserializer<'de>
 impl<'a, R: BufRead> AsciiValueDeserializer<'a, R> {
     fn read_ascii_token(&mut self) -> Result<String, PlyError> {
         if self.parent.token_index >= self.parent.current_line_tokens.len() {
-            return Err(PlyError::NotEnoughData);
+            return Err(PlyError::Serde(
+                "Not enough tokens in line for element".to_string(),
+            ));
         }
 
         let token = self.parent.current_line_tokens[self.parent.token_index].clone();
