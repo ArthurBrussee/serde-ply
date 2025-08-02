@@ -115,17 +115,20 @@ impl ChunkedFileParser {
         T: for<'de> serde::Deserialize<'de>,
     {
         let mut elements = Vec::new();
-        let mut cursor = std::io::Cursor::new(buffer);
+        let cursor = std::io::Cursor::new(buffer);
         let mut total_bytes_consumed = 0;
         let remaining_elements = element_def.count - self.elements_parsed_in_current;
 
-        // Parse elements one by one until we hit UnexpectedEof or finish
-        for _ in 0..remaining_elements {
-            let position_before = cursor.position();
+        // Create deserializer once and reuse it
+        let mut deserializer = BinaryElementDeserializer::<_, E>::new(
+            cursor,
+            remaining_elements,
+            element_def.properties.clone(),
+        );
 
-            // Create a single-element deserializer
-            let mut deserializer =
-                BinaryElementDeserializer::<_, E>::new(cursor, 1, element_def.properties.clone());
+        // Parse elements reusing the same deserializer
+        for _ in 0..remaining_elements {
+            let position_before = deserializer.reader.position();
 
             match deserializer.next_element::<T>() {
                 Ok(Some(element)) => {
@@ -133,11 +136,8 @@ impl ChunkedFileParser {
                     let position_after = deserializer.reader.position();
                     let bytes_consumed = position_after - position_before;
                     total_bytes_consumed += bytes_consumed as usize;
-
-                    // Update cursor for next iteration
-                    cursor = deserializer.reader;
                 }
-                Ok(None) => break, // Shouldn't happen with count=1
+                Ok(None) => break,
                 Err(PlyError::Io(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
                     // Not enough data for this element, stop here
                     break;
@@ -158,14 +158,13 @@ impl ChunkedFileParser {
     where
         T: for<'de> serde::Deserialize<'de>,
     {
-        let tokens: Vec<String> = line.split_whitespace().map(|s| s.to_string()).collect();
-
         let mut deserializer = AsciiElementDeserializer {
             reader: std::io::Cursor::new(line),
             elements_read: 0,
             element_count: 1,
-            current_line_tokens: tokens,
-            token_index: 0,
+            line_buffer: String::new(),
+            current_line: line.to_string(),
+            token_start: 0,
             properties: properties.to_vec(),
         };
 

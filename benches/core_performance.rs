@@ -94,17 +94,20 @@ fn benchmark_parsing(c: &mut Criterion) {
     let mut group = c.benchmark_group("parsing");
 
     // Simple binary parsing (3 floats per vertex)
-    let vertex_count = 1000;
+    let vertex_count = 500;
     let binary_data = generate_binary_ply(vertex_count);
     group.throughput(Throughput::Bytes(binary_data.len() as u64));
 
+    // Parse header once outside the benchmark
+    let mut header_cursor = Cursor::new(&binary_data);
+    let header = serde_ply::PlyHeader::parse(&mut header_cursor).unwrap();
+    let header_size = header_cursor.position() as usize;
+
     group.bench_function("simple_binary", |b| {
         b.iter(|| {
-            let cursor = Cursor::new(black_box(&binary_data));
-            let mut reader = std::io::BufReader::new(cursor);
-            let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
+            let mut cursor = Cursor::new(black_box(&binary_data[header_size..]));
             let _vertices: Vec<Vertex> =
-                serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
+                serde_ply::PlyFile::parse_elements(&mut cursor, &header, "vertex").unwrap();
         });
     });
 
@@ -114,11 +117,10 @@ fn benchmark_parsing(c: &mut Criterion) {
 
     group.bench_function("realistic_binary", |b| {
         b.iter(|| {
-            let cursor = Cursor::new(black_box(&realistic_data));
-            let mut reader = std::io::BufReader::new(cursor);
-            let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
+            let mut cursor = Cursor::new(black_box(&realistic_data));
+            let header = serde_ply::PlyHeader::parse(&mut cursor).unwrap();
             let _vertices: Vec<VertexWithColor> =
-                serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
+                serde_ply::PlyFile::parse_elements(&mut cursor, &header, "vertex").unwrap();
         });
     });
 
@@ -128,11 +130,10 @@ fn benchmark_parsing(c: &mut Criterion) {
 
     group.bench_function("ascii", |b| {
         b.iter(|| {
-            let cursor = Cursor::new(black_box(ascii_data.as_bytes()));
-            let mut reader = std::io::BufReader::new(cursor);
-            let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
+            let mut cursor = Cursor::new(black_box(ascii_data.as_bytes()));
+            let header = serde_ply::PlyHeader::parse(&mut cursor).unwrap();
             let _vertices: Vec<Vertex> =
-                serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
+                serde_ply::PlyFile::parse_elements(&mut cursor, &header, "vertex").unwrap();
         });
     });
 
@@ -142,7 +143,7 @@ fn benchmark_parsing(c: &mut Criterion) {
 fn benchmark_chunked_parsing(c: &mut Criterion) {
     let mut group = c.benchmark_group("chunked");
 
-    let vertex_count = 1000;
+    let vertex_count = 500;
     let binary_data = generate_binary_ply(vertex_count);
     group.throughput(Throughput::Bytes(binary_data.len() as u64));
 
@@ -154,9 +155,21 @@ fn benchmark_chunked_parsing(c: &mut Criterion) {
             // Feed data in chunks
             for chunk in binary_data.chunks(chunk_size) {
                 ply_file.feed_data(chunk);
-            }
 
-            // Parse all vertices
+                // Parse all vertices
+                let _vertices = ply_file.next_chunk::<Vertex>().unwrap();
+            }
+        });
+    });
+
+    group.bench_function("chunked_all_at_once", |b| {
+        b.iter(|| {
+            let mut ply_file = serde_ply::PlyFile::new();
+
+            // Feed all data at once
+            ply_file.feed_data(&binary_data);
+
+            // Parse all vertices in one call
             let _vertices = ply_file.next_chunk::<Vertex>().unwrap().unwrap();
         });
     });

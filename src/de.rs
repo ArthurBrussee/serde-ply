@@ -16,11 +16,9 @@ pub(crate) struct AsciiElementDeserializer<R> {
     pub reader: R,
     pub elements_read: usize,
     pub element_count: usize,
-    // TODO: This current line tokens stuff is awful. We should just use the reader for actual parsing.
-    // That is, advance until whitespace get number etc. Ply files don't need anything complicated.
-    // When hitting a newline we should make sure we've read all the ply properties.
-    pub current_line_tokens: Vec<String>,
-    pub token_index: usize,
+    pub line_buffer: String,
+    pub current_line: String,
+    pub token_start: usize,
     pub properties: Vec<PropertyType>,
 }
 
@@ -38,8 +36,9 @@ impl<R: BufRead> FormatDeserializer<R> for AsciiElementDeserializer<R> {
             reader,
             elements_read: 0,
             element_count,
-            current_line_tokens: Vec::new(),
-            token_index: 0,
+            line_buffer: String::new(),
+            current_line: String::new(),
+            token_start: 0,
             properties,
         }
     }
@@ -54,6 +53,7 @@ impl<R: BufRead> FormatDeserializer<R> for AsciiElementDeserializer<R> {
 
         self.elements_read += 1;
         self.read_ascii_line()?;
+        self.token_start = 0;
         let element = T::deserialize(AsciiDirectElementDeserializer { parent: self })?;
         Ok(Some(element))
     }
@@ -89,11 +89,12 @@ impl<R: BufRead, E: ByteOrder> FormatDeserializer<R> for BinaryElementDeserializ
 
 impl<R: BufRead> AsciiElementDeserializer<R> {
     fn read_ascii_line(&mut self) -> Result<(), PlyError> {
-        let mut line = String::new();
-        self.reader.read_line(&mut line)?;
+        self.line_buffer.clear();
+        self.reader.read_line(&mut self.line_buffer)?;
 
-        self.current_line_tokens = line.split_whitespace().map(|s| s.to_string()).collect();
-        self.token_index = 0;
+        // Store trimmed line for token parsing
+        self.current_line.clear();
+        self.current_line.push_str(self.line_buffer.trim());
         Ok(())
     }
 }
@@ -506,16 +507,30 @@ impl<'de, 'a, R: BufRead, E: ByteOrder> de::Deserializer<'de>
 }
 
 impl<'a, R: BufRead> AsciiValueDeserializer<'a, R> {
-    fn read_ascii_token(&mut self) -> Result<String, PlyError> {
-        if self.parent.token_index >= self.parent.current_line_tokens.len() {
+    fn read_ascii_token(&mut self) -> Result<&str, PlyError> {
+        let line = &self.parent.current_line;
+        let line_bytes = line.as_bytes();
+        let mut start = self.parent.token_start;
+
+        // Skip leading whitespace using byte operations
+        while start < line_bytes.len() && line_bytes[start].is_ascii_whitespace() {
+            start += 1;
+        }
+
+        if start >= line_bytes.len() {
             return Err(PlyError::Serde(
                 "Not enough tokens in line for element".to_string(),
             ));
         }
 
-        let token = self.parent.current_line_tokens[self.parent.token_index].clone();
-        self.parent.token_index += 1;
-        Ok(token)
+        // Find end of token using byte operations
+        let mut end = start;
+        while end < line_bytes.len() && !line_bytes[end].is_ascii_whitespace() {
+            end += 1;
+        }
+
+        self.parent.token_start = end;
+        Ok(&line[start..end])
     }
 }
 
