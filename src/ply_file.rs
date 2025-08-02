@@ -74,7 +74,8 @@ impl ChunkedFileParser {
     where
         T: for<'de> serde::Deserialize<'de>,
     {
-        let mut elements = Vec::new();
+        let remaining_elements = element_def.count - self.elements_parsed_in_current;
+        let mut elements = Vec::with_capacity(remaining_elements);
         let mut bytes_consumed = 0;
         let mut cursor = 0;
 
@@ -114,16 +115,16 @@ impl ChunkedFileParser {
     where
         T: for<'de> serde::Deserialize<'de>,
     {
-        let mut elements = Vec::new();
         let cursor = std::io::Cursor::new(buffer);
         let mut total_bytes_consumed = 0;
         let remaining_elements = element_def.count - self.elements_parsed_in_current;
+        let mut elements = Vec::with_capacity(remaining_elements);
 
         // Create deserializer once and reuse it
         let mut deserializer = BinaryElementDeserializer::<_, E>::new(
             cursor,
             remaining_elements,
-            element_def.properties.clone(),
+            element_def.properties.to_vec(),
         );
 
         // Parse elements reusing the same deserializer
@@ -168,11 +169,9 @@ impl ChunkedFileParser {
             properties: properties.to_vec(),
         };
 
-        let direct_deserializer = AsciiDirectElementDeserializer {
+        T::deserialize(AsciiDirectElementDeserializer {
             parent: &mut deserializer,
-        };
-
-        T::deserialize(direct_deserializer)
+        })
     }
 }
 
@@ -322,15 +321,16 @@ impl PlyFile {
     {
         let element_def = header
             .get_element(element_name)
-            .ok_or_else(|| PlyError::MissingElement(element_name.to_string()))?;
-
-        let properties = element_def.properties.to_vec();
-        let mut results = Vec::new();
+            .ok_or_else(|| PlyError::MissingElement(element_name.into()))?;
+        let mut results = Vec::with_capacity(element_def.count);
 
         match header.format {
             PlyFormat::Ascii => {
-                let mut deserializer =
-                    AsciiElementDeserializer::new(reader, element_def.count, properties);
+                let mut deserializer = AsciiElementDeserializer::new(
+                    reader,
+                    element_def.count,
+                    element_def.properties.to_vec(),
+                );
                 while let Some(element) = deserializer.next_element::<T>()? {
                     results.push(element);
                 }
@@ -339,7 +339,7 @@ impl PlyFile {
                 let mut deserializer = BinaryElementDeserializer::<_, byteorder::LittleEndian>::new(
                     reader,
                     element_def.count,
-                    properties,
+                    element_def.properties.to_vec(),
                 );
                 while let Some(element) = deserializer.next_element::<T>()? {
                     results.push(element);
@@ -349,7 +349,7 @@ impl PlyFile {
                 let mut deserializer = BinaryElementDeserializer::<_, byteorder::BigEndian>::new(
                     reader,
                     element_def.count,
-                    properties,
+                    element_def.properties.to_vec(),
                 );
                 while let Some(element) = deserializer.next_element::<T>()? {
                     results.push(element);
