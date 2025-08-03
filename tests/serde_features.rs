@@ -334,6 +334,110 @@ end_header
     let mut reader = BufReader::new(cursor);
     let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
 
-    let result = serde_ply::PlyFile::parse_elements::<_, MismatchedVertex>(&mut reader, &header, "vertex");
+    let result =
+        serde_ply::PlyFile::parse_elements::<_, MismatchedVertex>(&mut reader, &header, "vertex");
     assert!(result.is_err());
+}
+
+#[test]
+fn test_serde_flatten_support() {
+    use std::collections::HashMap;
+
+    #[derive(Deserialize, Debug, PartialEq)]
+    struct VertexWithFlatten {
+        x: f32,
+        y: f32,
+        z: f32,
+        #[serde(flatten)]
+        extra: HashMap<String, f32>,
+    }
+
+    let ply_data = r#"ply
+format ascii 1.0
+element vertex 1
+property float x
+property float y
+property float z
+property float val_0
+property float val_1
+property float confidence
+end_header
+1.0 2.0 3.0 10.0 20.0 0.95
+"#;
+
+    let cursor = Cursor::new(ply_data);
+    let mut reader = BufReader::new(cursor);
+    let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
+
+    let vertices: Vec<VertexWithFlatten> =
+        serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
+
+    assert_eq!(vertices.len(), 1);
+    let vertex = &vertices[0];
+    assert_eq!(vertex.x, 1.0);
+    assert_eq!(vertex.y, 2.0);
+    assert_eq!(vertex.z, 3.0);
+
+    // Check flattened fields
+    assert_eq!(vertex.extra.get("val_0"), Some(&10.0));
+    assert_eq!(vertex.extra.get("val_1"), Some(&20.0));
+    assert_eq!(vertex.extra.get("confidence"), Some(&0.95));
+    assert_eq!(vertex.extra.len(), 3);
+}
+
+#[test]
+fn test_serde_flatten_support_binary() {
+    use std::collections::HashMap;
+
+    #[derive(Deserialize, Debug, PartialEq)]
+    struct VertexWithFlatten {
+        x: f32,
+        y: f32,
+        z: f32,
+        #[serde(flatten)]
+        extra: HashMap<String, f32>,
+    }
+
+    let ply_data = r#"ply
+format binary_little_endian 1.0
+element vertex 1
+property float x
+property float y
+property float z
+property float val_0
+property float val_1
+property float confidence
+end_header
+"#;
+
+    // Binary data: x=1.0, y=2.0, z=3.0, val_0=10.0, val_1=20.0, confidence=0.95
+    let mut binary_data = Vec::new();
+    binary_data.extend_from_slice(&1.0f32.to_le_bytes()); // x
+    binary_data.extend_from_slice(&2.0f32.to_le_bytes()); // y
+    binary_data.extend_from_slice(&3.0f32.to_le_bytes()); // z
+    binary_data.extend_from_slice(&10.0f32.to_le_bytes()); // val_0
+    binary_data.extend_from_slice(&20.0f32.to_le_bytes()); // val_1
+    binary_data.extend_from_slice(&0.95f32.to_le_bytes()); // confidence
+
+    let mut ply_with_binary = ply_data.as_bytes().to_vec();
+    ply_with_binary.extend_from_slice(&binary_data);
+
+    let cursor = Cursor::new(ply_with_binary);
+    let mut reader = BufReader::new(cursor);
+    let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
+
+    let vertices: Vec<VertexWithFlatten> =
+        serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
+
+    assert_eq!(vertices.len(), 1);
+    let vertex = &vertices[0];
+    assert_eq!(vertex.x, 1.0);
+    assert_eq!(vertex.y, 2.0);
+    assert_eq!(vertex.z, 3.0);
+
+    // Check flattened fields
+    assert_eq!(vertex.extra.get("val_0"), Some(&10.0));
+    assert_eq!(vertex.extra.get("val_1"), Some(&20.0));
+    assert_eq!(vertex.extra.get("confidence"), Some(&0.95));
+    assert_eq!(vertex.extra.len(), 3);
 }

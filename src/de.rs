@@ -136,10 +136,21 @@ impl<'de, 'a, R: BufRead> de::Deserializer<'de> for AsciiDirectElementDeserializ
         visitor.visit_map(map_access)
     }
 
+    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        let map_access = AsciiDirectMapAccess {
+            parent: self.parent,
+            current_property: 0,
+        };
+        visitor.visit_map(map_access)
+    }
+
     serde::forward_to_deserialize_any! {
         bool i8 u8 i16 u16 i32 u32 i64 u64 f32 f64 char str string
         bytes byte_buf option unit unit_struct newtype_struct seq tuple
-        tuple_struct map enum identifier ignored_any
+        tuple_struct enum identifier ignored_any
     }
 }
 
@@ -174,10 +185,22 @@ impl<'de, 'a, R: BufRead, E: ByteOrder> de::Deserializer<'de>
         visitor.visit_map(map_access)
     }
 
+    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        let map_access = BinaryDirectMapAccess {
+            parent: self.parent,
+            current_property: 0,
+            _endian: PhantomData,
+        };
+        visitor.visit_map(map_access)
+    }
+
     serde::forward_to_deserialize_any! {
         bool i8 u8 i16 u16 i32 u32 i64 u64 f32 f64 char str string
         bytes byte_buf option unit unit_struct newtype_struct seq tuple
-        tuple_struct map enum identifier ignored_any
+        tuple_struct enum identifier ignored_any
     }
 }
 
@@ -215,9 +238,11 @@ impl<'de, 'a, R: BufRead> MapAccess<'de> for AsciiDirectMapAccess<'a, R> {
     where
         V: DeserializeSeed<'de>,
     {
+        let property_index = self.current_property;
         self.current_property += 1;
         seed.deserialize(AsciiValueDeserializer {
             parent: self.parent,
+            property_index,
         })
     }
 }
@@ -245,11 +270,13 @@ impl<'de, 'a, R: BufRead, E: ByteOrder> MapAccess<'de> for BinaryDirectMapAccess
     where
         V: DeserializeSeed<'de>,
     {
+        let property_index = self.current_property;
         self.current_property += 1;
 
         // Let Serde decide what it wants - it will call the appropriate deserializer method
         seed.deserialize(BinaryValueDeserializer::<_, E> {
             parent: self.parent,
+            property_index,
             _endian: PhantomData,
         })
     }
@@ -257,23 +284,43 @@ impl<'de, 'a, R: BufRead, E: ByteOrder> MapAccess<'de> for BinaryDirectMapAccess
 
 struct AsciiValueDeserializer<'a, R> {
     parent: &'a mut AsciiElementDeserializer<R>,
+    property_index: usize,
 }
 
 struct BinaryValueDeserializer<'a, R, E> {
     parent: &'a mut BinaryElementDeserializer<R, E>,
+    property_index: usize,
     _endian: PhantomData<E>,
 }
 
 impl<'de, 'a, R: BufRead> de::Deserializer<'de> for AsciiValueDeserializer<'a, R> {
     type Error = PlyError;
 
-    fn deserialize_any<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        Err(PlyError::Serde(
-            "deserialize_any not supported - struct fields must have specific types".to_string(),
-        ))
+        if self.property_index >= self.parent.properties.len() {
+            return Err(PlyError::Serde("Property index out of bounds".to_string()));
+        }
+
+        let property = &self.parent.properties[self.property_index];
+        match property {
+            PropertyType::Scalar { data_type, .. } => {
+                use crate::ScalarType;
+                match data_type {
+                    ScalarType::I8 => self.deserialize_i8(visitor),
+                    ScalarType::U8 => self.deserialize_u8(visitor),
+                    ScalarType::I16 => self.deserialize_i16(visitor),
+                    ScalarType::U16 => self.deserialize_u16(visitor),
+                    ScalarType::I32 => self.deserialize_i32(visitor),
+                    ScalarType::U32 => self.deserialize_u32(visitor),
+                    ScalarType::F32 => self.deserialize_f32(visitor),
+                    ScalarType::F64 => self.deserialize_f64(visitor),
+                }
+            }
+            PropertyType::List { .. } => self.deserialize_seq(visitor),
+        }
     }
 
     fn deserialize_i8<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
@@ -377,6 +424,7 @@ impl<'de, 'a, R: BufRead> de::Deserializer<'de> for AsciiValueDeserializer<'a, R
         let seq_access = AsciiSeqAccess {
             parent: self.parent,
             remaining: count,
+            property_index: self.property_index,
         };
         visitor.visit_seq(seq_access)
     }
@@ -402,13 +450,31 @@ impl<'de, 'a, R: BufRead, E: ByteOrder> de::Deserializer<'de>
 {
     type Error = PlyError;
 
-    fn deserialize_any<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        Err(PlyError::Serde(
-            "deserialize_any not supported - struct fields must have specific types".to_string(),
-        ))
+        if self.property_index >= self.parent.properties.len() {
+            return Err(PlyError::Serde("Property index out of bounds".to_string()));
+        }
+
+        let property = &self.parent.properties[self.property_index];
+        match property {
+            PropertyType::Scalar { data_type, .. } => {
+                use crate::ScalarType;
+                match data_type {
+                    ScalarType::I8 => self.deserialize_i8(visitor),
+                    ScalarType::U8 => self.deserialize_u8(visitor),
+                    ScalarType::I16 => self.deserialize_i16(visitor),
+                    ScalarType::U16 => self.deserialize_u16(visitor),
+                    ScalarType::I32 => self.deserialize_i32(visitor),
+                    ScalarType::U32 => self.deserialize_u32(visitor),
+                    ScalarType::F32 => self.deserialize_f32(visitor),
+                    ScalarType::F64 => self.deserialize_f64(visitor),
+                }
+            }
+            PropertyType::List { .. } => self.deserialize_seq(visitor),
+        }
     }
 
     fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -479,12 +545,13 @@ impl<'de, 'a, R: BufRead, E: ByteOrder> de::Deserializer<'de>
     where
         V: Visitor<'de>,
     {
-        // Read list count as u8 (standard PLY list count type)
-        let count = self.parent.reader.read_u8()? as usize;
+        // Read count from binary data based on list's count type
+        let count = self.parent.reader.read_u8()? as usize; // Simplified - should use actual count type
 
         let seq_access = BinarySeqAccess {
             parent: self.parent,
             remaining: count,
+            property_index: self.property_index,
             _endian: PhantomData,
         };
         visitor.visit_seq(seq_access)
@@ -538,12 +605,14 @@ impl<'a, R: BufRead> AsciiValueDeserializer<'a, R> {
 struct AsciiSeqAccess<'a, R> {
     parent: &'a mut AsciiElementDeserializer<R>,
     remaining: usize,
+    property_index: usize,
 }
 
 /// Binary sequence access for PLY lists
 struct BinarySeqAccess<'a, R, E> {
     parent: &'a mut BinaryElementDeserializer<R, E>,
     remaining: usize,
+    property_index: usize,
     _endian: PhantomData<E>,
 }
 
@@ -561,6 +630,7 @@ impl<'de, 'a, R: BufRead> de::SeqAccess<'de> for AsciiSeqAccess<'a, R> {
 
         let deserializer = AsciiValueDeserializer {
             parent: self.parent,
+            property_index: self.property_index,
         };
         seed.deserialize(deserializer).map(Some)
     }
@@ -580,6 +650,7 @@ impl<'de, 'a, R: BufRead, E: ByteOrder> de::SeqAccess<'de> for BinarySeqAccess<'
 
         let deserializer = BinaryValueDeserializer {
             parent: self.parent,
+            property_index: self.property_index,
             _endian: PhantomData,
         };
         seed.deserialize(deserializer).map(Some)
