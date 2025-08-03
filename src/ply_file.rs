@@ -57,15 +57,6 @@ impl ChunkedFileParser {
         ret
     }
 
-    /// Check if all elements of a specific type have been parsed
-    pub fn is_element_complete(&self) -> bool {
-        self.elements_parsed_in_current >= self.header.elements[self.current_element_index].count
-    }
-
-    pub fn all_elements_complete(&self) -> bool {
-        self.current_element_index >= self.header.elements.len()
-    }
-
     fn parse_ascii_chunk<T>(
         &mut self,
         element_def: &ElementDef,
@@ -194,60 +185,18 @@ impl PlyFile {
         }
     }
 
-    pub fn feed_data(&mut self, chunk: &[u8]) {
-        self.data_buffer.extend(chunk);
-        self.try_parse_header();
+    /// Get mutable access to the internal buffer for zero-copy writing.
+    ///
+    /// This allows any reader (including async ones) to write directly into
+    /// the buffer without copyies.
+    pub fn buffer_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.data_buffer
     }
 
-    pub fn header(&self) -> Option<&PlyHeader> {
-        match &self.state {
-            ParseState::ParsingElements { parser } => Some(&parser.header),
-            _ => None,
-        }
-    }
-
-    pub fn is_finished(&self) -> bool {
-        match &self.state {
-            ParseState::ParsingElements { parser } => parser.all_elements_complete(),
-            _ => false,
-        }
-    }
-
-    pub fn next_chunk<T>(&mut self) -> Result<Option<Vec<T>>, PlyError>
-    where
-        T: for<'de> Deserialize<'de>,
-    {
-        match &mut self.state {
-            ParseState::ParsingElements { parser } => {
-                match parser.parse_chunk::<T>(&self.data_buffer)? {
-                    ParseChunk::Advance(elements, bytes_consumed) => {
-                        // Remove consumed bytes from buffer
-                        if bytes_consumed > 0 {
-                            self.data_buffer.drain(..bytes_consumed);
-                        }
-                        if elements.is_empty() {
-                            Ok(None)
-                        } else {
-                            Ok(Some(elements))
-                        }
-                    }
-                    ParseChunk::Done => Ok(None),
-                }
-            }
-            _ => Err(PlyError::InvalidHeader(
-                "Not in element parsing state".to_string(),
-            )),
-        }
-    }
-
-    pub fn is_element_complete(&self) -> bool {
-        match &self.state {
-            ParseState::ParsingElements { parser } => parser.is_element_complete(),
-            _ => false,
-        }
-    }
-
-    fn try_parse_header(&mut self) {
+    /// Get the parsed PLY header if available.
+    ///
+    /// Returns `None` if there isn't enough data to complete header parsing.
+    pub fn header(&mut self) -> Option<&PlyHeader> {
         if let ParseState::WaitingForHeader = &mut self.state {
             let available_data = &self.data_buffer;
 
@@ -271,6 +220,64 @@ impl PlyFile {
                     self.data_buffer = leftover_data;
                 }
             }
+        }
+        match &self.state {
+            ParseState::ParsingElements { parser } => Some(&parser.header),
+            _ => None,
+        }
+    }
+
+    /// Parse the next chunk of elements from the buffer.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use serde_ply::PlyFile;
+    /// use serde::Deserialize;
+    ///
+    /// #[derive(Deserialize, Debug)]
+    /// struct Vertex { x: f32, y: f32, z: f32 }
+    ///
+    /// let mut ply_file = PlyFile::new();
+    ///
+    /// // Write complete PLY data
+    /// let ply_data = b"ply\nformat ascii 1.0\nelement vertex 1\nproperty float x\nproperty float y\nproperty float z\nend_header\n1.0 2.0 3.0\n";
+    /// ply_file.buffer_mut().extend_from_slice(ply_data);
+    ///
+    /// // Parse vertices as they become available
+    /// if let Some(vertices) = ply_file.next_chunk::<Vertex>().unwrap() {
+    ///     for vertex in vertices {
+    ///         println!("Vertex: {:?}", vertex);
+    ///     }
+    /// }
+    /// ```
+    pub fn next_chunk<T>(&mut self) -> Result<Option<Vec<T>>, PlyError>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
+        // Make sure header is parsed
+        let _ = self.header();
+
+        match &mut self.state {
+            ParseState::ParsingElements { parser } => {
+                match parser.parse_chunk::<T>(&self.data_buffer)? {
+                    ParseChunk::Advance(elements, bytes_consumed) => {
+                        // Remove consumed bytes from buffer
+                        if bytes_consumed > 0 {
+                            self.data_buffer.drain(..bytes_consumed);
+                        }
+                        if elements.is_empty() {
+                            Ok(None)
+                        } else {
+                            Ok(Some(elements))
+                        }
+                    }
+                    ParseChunk::Done => Ok(None),
+                }
+            }
+            _ => Err(PlyError::InvalidHeader(
+                "Not in element parsing state".into(),
+            )),
         }
     }
 }

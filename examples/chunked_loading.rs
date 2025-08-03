@@ -42,7 +42,7 @@ end_header
 
     // Feed in small chunks
     for chunk in ply_data.as_bytes().chunks(15) {
-        ply_file.feed_data(chunk);
+        ply_file.buffer_mut().extend_from_slice(chunk);
     }
 
     // Parse all vertices
@@ -78,31 +78,29 @@ end_header
     }
 
     let mut ply_file = PlyFile::new();
+    // Split data into chunks for the demo. In reality you might eg. have an async stream with data.
     let chunks: Vec<&[u8]> = ply_data.as_bytes().chunks(100).collect();
     let mut chunk_iter = chunks.iter();
 
     // Process header
     while ply_file.header().is_none() {
-        if let Some(chunk) = chunk_iter.next() {
-            ply_file.feed_data(chunk);
-        } else {
-            break;
-        }
+        ply_file
+            .buffer_mut()
+            .extend_from_slice(chunk_iter.next().unwrap());
     }
 
     println!("Header parsed, processing vertices...");
 
-    // Process vertices with interleaved feeding
     let mut total = 0;
 
-    loop {
-        while let Some(chunk) = ply_file.next_chunk::<Vertex>()? {
+    for chunk in chunk_iter {
+        // Feed in some data.
+        ply_file.buffer_mut().extend_from_slice(chunk);
+
+        // Parse new incoming data.
+        if let Some(chunk) = ply_file.next_chunk::<Vertex>()? {
             total += chunk.len();
             println!("Processed {} vertices (total: {})", chunk.len(), total);
-        }
-
-        if let Some(chunk) = chunk_iter.next() {
-            ply_file.feed_data(chunk);
         } else {
             break;
         }
@@ -131,19 +129,16 @@ fn demonstrate_binary_chunked() -> Result<(), PlyError> {
     let mut chunk_iter = chunks.iter();
 
     // Header parsing
-    while !{
-        let this = &ply_file;
-        this.header().is_some()
-    } {
+    while ply_file.header().is_none() {
         if let Some(chunk) = chunk_iter.next() {
-            ply_file.feed_data(chunk);
+            ply_file.buffer_mut().extend_from_slice(chunk);
         } else {
             break;
         }
     }
 
     for chunk in chunk_iter {
-        ply_file.feed_data(chunk);
+        ply_file.buffer_mut().extend_from_slice(chunk);
 
         while let Some(chunk) = ply_file.next_chunk::<Vertex>()? {
             for vertex in chunk {

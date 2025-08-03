@@ -38,7 +38,7 @@ end_header
 "#;
 
     let mut ply_file = PlyFile::new();
-    ply_file.feed_data(ply_data.as_bytes());
+    ply_file.buffer_mut().extend_from_slice(ply_data.as_bytes());
 
     let vertices = ply_file.next_chunk::<Vertex>().unwrap().unwrap();
     assert_eq!(vertices.len(), 3);
@@ -77,7 +77,7 @@ fn test_binary_basic() {
     }
 
     let mut ply_file = PlyFile::new();
-    ply_file.feed_data(&binary_data);
+    ply_file.buffer_mut().extend_from_slice(&binary_data);
 
     let parsed = ply_file.next_chunk::<Vertex>().unwrap().unwrap();
     assert_eq!(parsed.len(), 2);
@@ -113,7 +113,7 @@ fn test_binary_big_endian() {
     }
 
     let mut ply_file = PlyFile::new();
-    ply_file.feed_data(&binary_data);
+    ply_file.buffer_mut().extend_from_slice(&binary_data);
 
     let parsed = ply_file.next_chunk::<Vertex>().unwrap().unwrap();
     assert_eq!(parsed.len(), 1);
@@ -141,7 +141,7 @@ end_header
 "#; // Missing second vertex
 
     let mut ply_file = PlyFile::new();
-    ply_file.feed_data(ply_data.as_bytes());
+    ply_file.buffer_mut().extend_from_slice(ply_data.as_bytes());
 
     // Should get first vertex
     let chunk1 = ply_file.next_chunk::<Vertex>().unwrap().unwrap();
@@ -160,7 +160,7 @@ end_header
     assert!(chunk2.is_none());
 
     // Add the missing vertex data
-    ply_file.feed_data(b"4.0 5.0 6.0\n");
+    ply_file.buffer_mut().extend_from_slice(b"4.0 5.0 6.0\n");
 
     // Now should get the second vertex
     let chunk3 = ply_file.next_chunk::<Vertex>().unwrap().unwrap();
@@ -199,7 +199,9 @@ fn test_binary_incomplete_elements() {
     // Feed only header + first complete vertex (12 bytes)
     let header_size = header.len();
     let first_vertex_size = 12;
-    ply_file.feed_data(&binary_data[..header_size + first_vertex_size]);
+    ply_file
+        .buffer_mut()
+        .extend_from_slice(&binary_data[..header_size + first_vertex_size]);
 
     // Should parse exactly one vertex
     let chunk1 = ply_file.next_chunk::<Vertex>().unwrap().unwrap();
@@ -217,7 +219,7 @@ fn test_binary_incomplete_elements() {
     assert!(ply_file.next_chunk::<Vertex>().unwrap().is_none());
 
     // Feed partial second vertex (only 8 bytes out of 12)
-    ply_file.feed_data(
+    ply_file.buffer_mut().extend_from_slice(
         &binary_data[header_size + first_vertex_size..header_size + first_vertex_size + 8],
     );
 
@@ -225,7 +227,9 @@ fn test_binary_incomplete_elements() {
     assert!(ply_file.next_chunk::<Vertex>().unwrap().is_none());
 
     // Feed remaining data
-    ply_file.feed_data(&binary_data[header_size + first_vertex_size + 8..]);
+    ply_file
+        .buffer_mut()
+        .extend_from_slice(&binary_data[header_size + first_vertex_size + 8..]);
 
     // Now should get the second vertex
     let chunk2 = ply_file.next_chunk::<Vertex>().unwrap().unwrap();
@@ -261,7 +265,7 @@ end_header
 "#;
 
     let mut ply_file = PlyFile::new();
-    ply_file.feed_data(ply_data.as_bytes());
+    ply_file.buffer_mut().extend_from_slice(ply_data.as_bytes());
 
     // Parse vertices
     let vertices = ply_file.next_chunk::<Vertex>().unwrap().unwrap();
@@ -301,7 +305,7 @@ end_header
 "#;
 
     let mut ply_file = PlyFile::new();
-    ply_file.feed_data(ply_data.as_bytes());
+    ply_file.buffer_mut().extend_from_slice(ply_data.as_bytes());
 
     let faces = ply_file.next_chunk::<Face>().unwrap().unwrap();
     assert_eq!(faces.len(), 2);
@@ -329,10 +333,10 @@ end_header
     let header_part = &ply_data.as_bytes()[..header_end];
     let data_part = &ply_data.as_bytes()[header_end..];
 
-    ply_file.feed_data(header_part);
+    ply_file.buffer_mut().extend_from_slice(header_part);
     assert!(ply_file.header().is_some());
 
-    ply_file.feed_data(data_part);
+    ply_file.buffer_mut().extend_from_slice(data_part);
 
     let vertices = ply_file.next_chunk::<Vertex>().unwrap().unwrap();
     assert_eq!(vertices.len(), 1);
@@ -363,8 +367,9 @@ end_header
     let mut ply_file = PlyFile::new();
 
     // Feed data in 3-byte chunks
-    for chunk in ply_data.as_bytes().chunks(3) {
-        ply_file.feed_data(chunk);
+    let data = ply_data.as_bytes();
+    for chunk in data.chunks(3) {
+        ply_file.buffer_mut().extend_from_slice(chunk);
     }
 
     let vertices = ply_file.next_chunk::<Vertex>().unwrap().unwrap();
@@ -400,7 +405,7 @@ end_header
 "#;
 
     let mut ply_file = PlyFile::new();
-    ply_file.feed_data(ply_data.as_bytes());
+    ply_file.buffer_mut().extend_from_slice(ply_data.as_bytes());
 
     assert!(ply_file.next_chunk::<Vertex>().unwrap().is_none());
 }
@@ -424,8 +429,9 @@ end_header
     let mut all_vertices = Vec::new();
 
     // Feed and parse incrementally
-    for chunk in ply_data.as_bytes().chunks(20) {
-        ply_file.feed_data(chunk);
+    let data = ply_data.as_bytes();
+    for chunk in data.chunks(20) {
+        ply_file.buffer_mut().extend_from_slice(chunk);
 
         // Only try to parse if header is ready
         if ply_file.header().is_some() {
@@ -475,7 +481,7 @@ fn test_binary_incomplete_lists() {
                                                         // Missing 2 more indices
 
     let mut ply_file = PlyFile::new();
-    ply_file.feed_data(&binary_data);
+    ply_file.buffer_mut().extend_from_slice(&binary_data);
 
     // Should parse only the first complete face
     let faces1 = ply_file.next_chunk::<Face>().unwrap().unwrap();
@@ -489,7 +495,9 @@ fn test_binary_incomplete_lists() {
     binary_data.extend_from_slice(&2i32.to_le_bytes()); // index 2
     binary_data.extend_from_slice(&3i32.to_le_bytes()); // index 3
 
-    ply_file.feed_data(&binary_data[binary_data.len() - 8..]);
+    ply_file
+        .buffer_mut()
+        .extend_from_slice(&binary_data[binary_data.len() - 8..]);
 
     // Now should get the second face
     let faces2 = ply_file.next_chunk::<Face>().unwrap().unwrap();
@@ -523,7 +531,7 @@ fn test_binary_lists() {
 
     // Feed in small chunks to test list boundary detection
     for chunk in binary_data.chunks(6) {
-        ply_file.feed_data(chunk);
+        ply_file.buffer_mut().extend_from_slice(chunk);
     }
 
     let faces = ply_file.next_chunk::<Face>().unwrap().unwrap();

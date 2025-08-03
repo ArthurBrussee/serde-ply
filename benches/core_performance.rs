@@ -152,9 +152,9 @@ fn benchmark_chunked_parsing(c: &mut Criterion) {
             let mut ply_file = serde_ply::PlyFile::new();
             let chunk_size = 4096;
 
-            // Feed data in chunks
+            // Feed data in chunks using the buffer_mut API
             for chunk in binary_data.chunks(chunk_size) {
-                ply_file.feed_data(chunk);
+                ply_file.buffer_mut().extend_from_slice(black_box(chunk));
 
                 // Parse all vertices
                 let _vertices = ply_file.next_chunk::<Vertex>().unwrap();
@@ -166,8 +166,10 @@ fn benchmark_chunked_parsing(c: &mut Criterion) {
         b.iter(|| {
             let mut ply_file = serde_ply::PlyFile::new();
 
-            // Feed all data at once
-            ply_file.feed_data(&binary_data);
+            // Feed all data at once using the buffer_mut API
+            ply_file
+                .buffer_mut()
+                .extend_from_slice(black_box(&binary_data));
 
             // Parse all vertices in one call
             let _vertices = ply_file.next_chunk::<Vertex>().unwrap().unwrap();
