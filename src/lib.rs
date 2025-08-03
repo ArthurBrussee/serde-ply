@@ -68,7 +68,7 @@ impl fmt::Display for PlyFormat {
 }
 
 // TODO: Idk if rust has some builtin way? All these are existing scalar types, but probably no clean way to do it.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ScalarType {
     I8,
     U8,
@@ -125,6 +125,15 @@ pub enum PropertyType {
         data_type: ScalarType,
         name: String,
     },
+}
+
+impl PropertyType {
+    pub fn name(&self) -> &str {
+        match self {
+            PropertyType::Scalar { name, .. } => name,
+            PropertyType::List { name, .. } => name,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

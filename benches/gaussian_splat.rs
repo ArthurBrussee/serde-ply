@@ -1,5 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use serde::Deserialize;
+
 use std::io::{BufReader, Cursor, Seek};
 
 #[derive(Deserialize)]
@@ -193,6 +194,7 @@ fn bench_gaussian_splat(c: &mut Criterion) {
             black_box(splats)
         });
     });
+
     group.finish();
 }
 

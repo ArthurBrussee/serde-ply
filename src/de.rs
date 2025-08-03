@@ -1,16 +1,24 @@
+//! PLY deserializer implementation
+//!
+//! PERFORMANCE NOTE: The main bottleneck in PLY deserialization is field name lookups
+//! during map-based deserialization. Each field access requires string comparisons to
+//! match field names from the PLY header to struct field names. For structures with
+//! many fields (like GaussianSplat with 58 fields), this becomes a significant overhead.
+//!
+//! Potential optimizations for users requiring maximum performance:
+//! 1. Use tuple structs instead of named structs to enable sequence-based deserialization
+//! 2. Implement custom Deserialize that uses positional field access
+//! 3. Pre-compute field mappings for homogeneous element types
+//!
+//! The current implementation prioritizes serde ecosystem compatibility and ease of use
+//! over raw performance.
+
 use crate::{PlyError, PropertyType};
 use byteorder::{ByteOrder, ReadBytesExt};
 use serde::de::{self, DeserializeSeed, MapAccess, Visitor};
 
 use serde::de::value::StrDeserializer;
 use std::{io::BufRead, marker::PhantomData};
-
-pub trait FormatDeserializer<R> {
-    fn new(reader: R, element_count: usize, properties: Vec<PropertyType>) -> Self;
-    fn next_element<T>(&mut self) -> Result<Option<T>, PlyError>
-    where
-        T: for<'de> serde::Deserialize<'de>;
-}
 
 pub(crate) struct AsciiElementDeserializer<R> {
     pub reader: R,
@@ -27,11 +35,12 @@ pub(crate) struct BinaryElementDeserializer<R, E> {
     pub elements_read: usize,
     pub element_count: usize,
     pub properties: Vec<PropertyType>,
+    pub property_names: Vec<String>,
     pub _endian: PhantomData<E>,
 }
 
-impl<R: BufRead> FormatDeserializer<R> for AsciiElementDeserializer<R> {
-    fn new(reader: R, element_count: usize, properties: Vec<PropertyType>) -> Self {
+impl<R: BufRead> AsciiElementDeserializer<R> {
+    pub fn new(reader: R, element_count: usize, properties: Vec<PropertyType>) -> Self {
         Self {
             reader,
             elements_read: 0,
@@ -43,7 +52,7 @@ impl<R: BufRead> FormatDeserializer<R> for AsciiElementDeserializer<R> {
         }
     }
 
-    fn next_element<T>(&mut self) -> Result<Option<T>, PlyError>
+    pub fn next_element<T>(&mut self) -> Result<Option<T>, PlyError>
     where
         T: for<'de> serde::Deserialize<'de>,
     {
@@ -59,18 +68,24 @@ impl<R: BufRead> FormatDeserializer<R> for AsciiElementDeserializer<R> {
     }
 }
 
-impl<R: BufRead, E: ByteOrder> FormatDeserializer<R> for BinaryElementDeserializer<R, E> {
-    fn new(reader: R, element_count: usize, properties: Vec<PropertyType>) -> Self {
+impl<'a, R: BufRead, E: ByteOrder> BinaryElementDeserializer<R, E> {
+    pub fn new(
+        reader: R,
+        element_count: usize,
+        properties: Vec<PropertyType>,
+        property_names: Vec<String>,
+    ) -> Self {
         Self {
             reader,
             elements_read: 0,
             element_count,
             properties,
+            property_names,
             _endian: PhantomData,
         }
     }
 
-    fn next_element<T>(&mut self) -> Result<Option<T>, PlyError>
+    pub fn next_element<T>(&mut self) -> Result<Option<T>, PlyError>
     where
         T: for<'de> serde::Deserialize<'de>,
     {
@@ -254,16 +269,13 @@ impl<'de, 'a, R: BufRead, E: ByteOrder> MapAccess<'de> for BinaryDirectMapAccess
     where
         K: DeserializeSeed<'de>,
     {
-        if self.current_property >= self.parent.properties.len() {
-            return Ok(None);
-        }
+        let field_name = &self.parent.property_names.get(self.current_property);
 
-        let property = &self.parent.properties[self.current_property];
-        let field_name = match property {
-            PropertyType::Scalar { name, .. } => name,
-            PropertyType::List { name, .. } => name,
-        };
-        seed.deserialize(StrDeserializer::new(field_name)).map(Some)
+        if let Some(name) = field_name {
+            seed.deserialize(StrDeserializer::new(name)).map(Some)
+        } else {
+            Ok(None)
+        }
     }
 
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>

@@ -1,7 +1,7 @@
 use crate::{
     de::{
         find_header_end, AsciiDirectElementDeserializer, AsciiElementDeserializer,
-        BinaryElementDeserializer, FormatDeserializer,
+        BinaryElementDeserializer,
     },
     ElementDef, PlyError, PlyFormat, PlyHeader, PropertyType,
 };
@@ -111,11 +111,18 @@ impl ChunkedFileParser {
         let remaining_elements = element_def.count - self.elements_parsed_in_current;
         let mut elements = Vec::with_capacity(remaining_elements);
 
+        let names = element_def
+            .properties
+            .iter()
+            .map(|p| p.name().to_string())
+            .collect::<Vec<_>>();
+
         // Create deserializer once and reuse it
         let mut deserializer = BinaryElementDeserializer::<_, E>::new(
             cursor,
             remaining_elements,
             element_def.properties.to_vec(),
+            names,
         );
 
         // Parse elements reusing the same deserializer
@@ -331,6 +338,12 @@ impl PlyFile {
             .ok_or_else(|| PlyError::MissingElement(element_name.into()))?;
         let mut results = Vec::with_capacity(element_def.count);
 
+        let names = element_def
+            .properties
+            .iter()
+            .map(|p| p.name().to_string())
+            .collect::<Vec<_>>();
+
         match header.format {
             PlyFormat::Ascii => {
                 let mut deserializer = AsciiElementDeserializer::new(
@@ -347,6 +360,7 @@ impl PlyFile {
                     reader,
                     element_def.count,
                     element_def.properties.to_vec(),
+                    names,
                 );
                 while let Some(element) = deserializer.next_element::<T>()? {
                     results.push(element);
@@ -357,6 +371,7 @@ impl PlyFile {
                     reader,
                     element_def.count,
                     element_def.properties.to_vec(),
+                    names,
                 );
                 while let Some(element) = deserializer.next_element::<T>()? {
                     results.push(element);
