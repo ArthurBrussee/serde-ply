@@ -1,9 +1,9 @@
 use crate::{
     de::{
-        find_header_end, AsciiDirectElementDeserializer, AsciiElementDeserializer,
+        find_header_end, AsciiElementDeserializer, AsciiRowMapDeserializer,
         BinaryElementDeserializer,
     },
-    ElementDef, PlyError, PlyFormat, PlyHeader, PropertyType,
+    ElementDef, PlyError, PlyFormat, PlyHeader, PlyProperty,
 };
 use byteorder::ByteOrder;
 use serde::Deserialize;
@@ -111,19 +111,8 @@ impl ChunkedFileParser {
         let remaining_elements = element_def.count - self.elements_parsed_in_current;
         let mut elements = Vec::with_capacity(remaining_elements);
 
-        let names = element_def
-            .properties
-            .iter()
-            .map(|p| p.name().to_string())
-            .collect::<Vec<_>>();
-
         // Create deserializer once and reuse it
-        let mut deserializer = BinaryElementDeserializer::<_, E>::new(
-            cursor,
-            remaining_elements,
-            element_def.properties.to_vec(),
-            names,
-        );
+        let mut deserializer = BinaryElementDeserializer::<_, E>::new(cursor, element_def.clone());
 
         // Parse elements reusing the same deserializer
         for _ in 0..remaining_elements {
@@ -153,21 +142,22 @@ impl ChunkedFileParser {
         Ok(ParseChunk::Advance(elements, total_bytes_consumed))
     }
 
-    fn parse_ascii_line<T>(&self, line: &str, properties: &[PropertyType]) -> Result<T, PlyError>
+    fn parse_ascii_line<T>(&self, line: &str, properties: &[PlyProperty]) -> Result<T, PlyError>
     where
         T: for<'de> serde::Deserialize<'de>,
     {
-        let mut deserializer = AsciiElementDeserializer {
-            reader: std::io::Cursor::new(line),
-            elements_read: 0,
-            element_count: 1,
-            line_buffer: String::new(),
-            current_line: line.to_string(),
-            token_start: 0,
+        let elem_def = crate::ElementDef {
+            name: "line".to_string(),
+            count: 1,
             properties: properties.to_vec(),
         };
+        let mut deserializer =
+            AsciiElementDeserializer::new(std::io::Cursor::new(format!("{line}\n")), elem_def);
 
-        T::deserialize(AsciiDirectElementDeserializer {
+        // Read the line into the deserializer's state
+        deserializer.read_ascii_line()?;
+
+        T::deserialize(AsciiRowMapDeserializer {
             parent: &mut deserializer,
         })
     }
@@ -338,19 +328,9 @@ impl PlyFile {
             .ok_or_else(|| PlyError::MissingElement(element_name.into()))?;
         let mut results = Vec::with_capacity(element_def.count);
 
-        let names = element_def
-            .properties
-            .iter()
-            .map(|p| p.name().to_string())
-            .collect::<Vec<_>>();
-
         match header.format {
             PlyFormat::Ascii => {
-                let mut deserializer = AsciiElementDeserializer::new(
-                    reader,
-                    element_def.count,
-                    element_def.properties.to_vec(),
-                );
+                let mut deserializer = AsciiElementDeserializer::new(reader, element_def.clone());
                 while let Some(element) = deserializer.next_element::<T>()? {
                     results.push(element);
                 }
@@ -358,9 +338,7 @@ impl PlyFile {
             PlyFormat::BinaryLittleEndian => {
                 let mut deserializer = BinaryElementDeserializer::<_, byteorder::LittleEndian>::new(
                     reader,
-                    element_def.count,
-                    element_def.properties.to_vec(),
-                    names,
+                    element_def.clone(),
                 );
                 while let Some(element) = deserializer.next_element::<T>()? {
                     results.push(element);
@@ -369,9 +347,7 @@ impl PlyFile {
             PlyFormat::BinaryBigEndian => {
                 let mut deserializer = BinaryElementDeserializer::<_, byteorder::BigEndian>::new(
                     reader,
-                    element_def.count,
-                    element_def.properties.to_vec(),
-                    names,
+                    element_def.clone(),
                 );
                 while let Some(element) = deserializer.next_element::<T>()? {
                     results.push(element);

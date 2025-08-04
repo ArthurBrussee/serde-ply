@@ -52,7 +52,7 @@ end_header
     );
 
     // Write PLY file
-    use serde_ply::{ElementDef, PlyFormat, PlyHeader, PropertyType, ScalarType};
+    use serde_ply::{ElementDef, PlyFormat, PlyHeader, PlyProperty, ScalarType};
 
     let output_header = PlyHeader {
         format: PlyFormat::Ascii,
@@ -61,30 +61,12 @@ end_header
             name: "vertex".to_string(),
             count: vertices.len(),
             properties: vec![
-                PropertyType::Scalar {
-                    data_type: ScalarType::F32,
-                    name: "x".to_string(),
-                },
-                PropertyType::Scalar {
-                    data_type: ScalarType::F32,
-                    name: "y".to_string(),
-                },
-                PropertyType::Scalar {
-                    data_type: ScalarType::F32,
-                    name: "z".to_string(),
-                },
-                PropertyType::Scalar {
-                    data_type: ScalarType::U8,
-                    name: "red".to_string(),
-                },
-                PropertyType::Scalar {
-                    data_type: ScalarType::U8,
-                    name: "green".to_string(),
-                },
-                PropertyType::Scalar {
-                    data_type: ScalarType::U8,
-                    name: "blue".to_string(),
-                },
+                PlyProperty::scalar("x".to_string(), ScalarType::F32),
+                PlyProperty::scalar("y".to_string(), ScalarType::F32),
+                PlyProperty::scalar("z".to_string(), ScalarType::F32),
+                PlyProperty::scalar("red".to_string(), ScalarType::U8),
+                PlyProperty::scalar("green".to_string(), ScalarType::U8),
+                PlyProperty::scalar("blue".to_string(), ScalarType::U8),
             ],
         }],
         comments: vec![],

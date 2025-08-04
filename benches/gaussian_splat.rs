@@ -16,13 +16,6 @@ struct GaussianSplat {
     scale_x: f32,
     scale_y: f32,
     scale_z: f32,
-    #[serde(flatten)]
-    sh_map: ShMap,
-}
-
-#[derive(Deserialize)]
-#[allow(unused)]
-struct ShMap {
     #[serde(default)]
     sh_val_0: f32,
     #[serde(default)]

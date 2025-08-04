@@ -116,22 +116,38 @@ impl FromStr for ScalarType {
 }
 
 #[derive(Debug, Clone)]
-pub enum PropertyType {
+enum PropertyType {
     /// A scalar property with a single value
-    Scalar { data_type: ScalarType, name: String },
+    Scalar { data_type: ScalarType },
     /// A list property with variable length
     List {
         count_type: ScalarType,
         data_type: ScalarType,
-        name: String,
     },
 }
+#[derive(Debug, Clone)]
+pub struct PlyProperty {
+    name: String,
+    property_type: PropertyType,
+}
 
-impl PropertyType {
-    pub fn name(&self) -> &str {
-        match self {
-            PropertyType::Scalar { name, .. } => name,
-            PropertyType::List { name, .. } => name,
+impl PlyProperty {
+    /// Create a scalar property
+    pub fn scalar(name: String, data_type: ScalarType) -> Self {
+        Self {
+            name,
+            property_type: PropertyType::Scalar { data_type },
+        }
+    }
+
+    /// Create a list property
+    pub fn list(name: String, count_type: ScalarType, data_type: ScalarType) -> Self {
+        Self {
+            name,
+            property_type: PropertyType::List {
+                count_type,
+                data_type,
+            },
         }
     }
 }
@@ -140,7 +156,7 @@ impl PropertyType {
 pub struct ElementDef {
     pub name: String,
     pub count: usize,
-    pub properties: Vec<PropertyType>,
+    pub properties: Vec<PlyProperty>,
 }
 
 #[derive(Debug, Clone)]
@@ -252,18 +268,21 @@ impl PlyHeader {
                         let data_type = ScalarType::parse(parts[3])?;
                         let name = parts[4].to_string();
 
-                        element.properties.push(PropertyType::List {
-                            count_type,
-                            data_type,
+                        element.properties.push(PlyProperty {
+                            property_type: PropertyType::List {
+                                count_type,
+                                data_type,
+                            },
                             name,
                         });
                     } else {
                         let data_type = ScalarType::parse(parts[1])?;
                         let name = parts[2].to_string();
 
-                        element
-                            .properties
-                            .push(PropertyType::Scalar { data_type, name });
+                        element.properties.push(PlyProperty {
+                            property_type: PropertyType::Scalar { data_type },
+                            name,
+                        });
                     }
                 }
                 _ => {

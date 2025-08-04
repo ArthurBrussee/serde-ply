@@ -69,26 +69,25 @@ impl<W: Write> PlySerializer<W> {
                 writeln!(self.writer, "element {} {}", element.name, element.count)?;
 
                 for property in &element.properties {
-                    match property {
-                        PropertyType::Scalar { data_type, name } => {
+                    match &property.property_type {
+                        PropertyType::Scalar { data_type } => {
                             writeln!(
                                 self.writer,
                                 "property {} {}",
                                 scalar_type_to_string(data_type),
-                                name
+                                property.name
                             )?;
                         }
                         PropertyType::List {
                             count_type,
                             data_type,
-                            name,
                         } => {
                             writeln!(
                                 self.writer,
                                 "property list {} {} {}",
                                 scalar_type_to_string(count_type),
                                 scalar_type_to_string(data_type),
-                                name
+                                property.name
                             )?;
                         }
                     }
@@ -635,7 +634,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ElementDef, PlyFormat, PlyHeader, PropertyType, ScalarType};
+    use crate::{ElementDef, PlyFormat, PlyHeader, PlyProperty, ScalarType};
     use serde::Serialize;
 
     #[derive(Serialize)]
@@ -694,17 +693,23 @@ mod tests {
                 name: "vertex".to_string(),
                 count: 3,
                 properties: vec![
-                    PropertyType::Scalar {
-                        data_type: ScalarType::F32,
+                    PlyProperty {
                         name: "x".to_string(),
+                        property_type: PropertyType::Scalar {
+                            data_type: ScalarType::F32,
+                        },
                     },
-                    PropertyType::Scalar {
-                        data_type: ScalarType::F32,
+                    PlyProperty {
                         name: "y".to_string(),
+                        property_type: PropertyType::Scalar {
+                            data_type: ScalarType::F32,
+                        },
                     },
-                    PropertyType::Scalar {
-                        data_type: ScalarType::F32,
+                    PlyProperty {
                         name: "z".to_string(),
+                        property_type: PropertyType::Scalar {
+                            data_type: ScalarType::F32,
+                        },
                     },
                 ],
             }],

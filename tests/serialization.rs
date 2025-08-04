@@ -1,7 +1,7 @@
 //! Comprehensive serialization tests
 
 use serde::Serialize;
-use serde_ply::{ElementDef, PlyFormat, PlyHeader, PropertyType, ScalarType};
+use serde_ply::{ElementDef, PlyFormat, PlyHeader, PlyProperty, ScalarType};
 use std::io::Cursor;
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -59,40 +59,22 @@ fn test_complete_binary_ply_file() {
                 name: "vertex".to_string(),
                 count: vertices.len(),
                 properties: vec![
-                    PropertyType::Scalar {
-                        data_type: ScalarType::F32,
-                        name: "x".to_string(),
-                    },
-                    PropertyType::Scalar {
-                        data_type: ScalarType::F32,
-                        name: "y".to_string(),
-                    },
-                    PropertyType::Scalar {
-                        data_type: ScalarType::F32,
-                        name: "z".to_string(),
-                    },
-                    PropertyType::Scalar {
-                        data_type: ScalarType::U8,
-                        name: "red".to_string(),
-                    },
-                    PropertyType::Scalar {
-                        data_type: ScalarType::U8,
-                        name: "green".to_string(),
-                    },
-                    PropertyType::Scalar {
-                        data_type: ScalarType::U8,
-                        name: "blue".to_string(),
-                    },
+                    PlyProperty::scalar("x".to_string(), ScalarType::F32),
+                    PlyProperty::scalar("y".to_string(), ScalarType::F32),
+                    PlyProperty::scalar("z".to_string(), ScalarType::F32),
+                    PlyProperty::scalar("red".to_string(), ScalarType::U8),
+                    PlyProperty::scalar("green".to_string(), ScalarType::U8),
+                    PlyProperty::scalar("blue".to_string(), ScalarType::U8),
                 ],
             },
             ElementDef {
                 name: "face".to_string(),
                 count: faces.len(),
-                properties: vec![PropertyType::List {
-                    count_type: ScalarType::U8,
-                    data_type: ScalarType::U32,
-                    name: "vertex_indices".to_string(),
-                }],
+                properties: vec![PlyProperty::list(
+                    "vertex_indices".to_string(),
+                    ScalarType::U8,
+                    ScalarType::U32,
+                )],
             },
         ],
         comments: vec!["Generated test file".to_string()],
@@ -149,30 +131,12 @@ fn test_binary_round_trip() {
             name: "vertex".to_string(),
             count: original_vertices.len(),
             properties: vec![
-                PropertyType::Scalar {
-                    data_type: ScalarType::F32,
-                    name: "x".to_string(),
-                },
-                PropertyType::Scalar {
-                    data_type: ScalarType::F32,
-                    name: "y".to_string(),
-                },
-                PropertyType::Scalar {
-                    data_type: ScalarType::F32,
-                    name: "z".to_string(),
-                },
-                PropertyType::Scalar {
-                    data_type: ScalarType::U8,
-                    name: "red".to_string(),
-                },
-                PropertyType::Scalar {
-                    data_type: ScalarType::U8,
-                    name: "green".to_string(),
-                },
-                PropertyType::Scalar {
-                    data_type: ScalarType::U8,
-                    name: "blue".to_string(),
-                },
+                PlyProperty::scalar("x".to_string(), ScalarType::F32),
+                PlyProperty::scalar("y".to_string(), ScalarType::F32),
+                PlyProperty::scalar("z".to_string(), ScalarType::F32),
+                PlyProperty::scalar("red".to_string(), ScalarType::U8),
+                PlyProperty::scalar("green".to_string(), ScalarType::U8),
+                PlyProperty::scalar("blue".to_string(), ScalarType::U8),
             ],
         }],
         comments: vec![],
@@ -228,30 +192,12 @@ fn test_ascii_round_trip() {
             name: "vertex".to_string(),
             count: original_vertices.len(),
             properties: vec![
-                PropertyType::Scalar {
-                    data_type: ScalarType::F32,
-                    name: "x".to_string(),
-                },
-                PropertyType::Scalar {
-                    data_type: ScalarType::F32,
-                    name: "y".to_string(),
-                },
-                PropertyType::Scalar {
-                    data_type: ScalarType::F32,
-                    name: "z".to_string(),
-                },
-                PropertyType::Scalar {
-                    data_type: ScalarType::U8,
-                    name: "red".to_string(),
-                },
-                PropertyType::Scalar {
-                    data_type: ScalarType::U8,
-                    name: "green".to_string(),
-                },
-                PropertyType::Scalar {
-                    data_type: ScalarType::U8,
-                    name: "blue".to_string(),
-                },
+                PlyProperty::scalar("x".to_string(), ScalarType::F32),
+                PlyProperty::scalar("y".to_string(), ScalarType::F32),
+                PlyProperty::scalar("z".to_string(), ScalarType::F32),
+                PlyProperty::scalar("red".to_string(), ScalarType::U8),
+                PlyProperty::scalar("green".to_string(), ScalarType::U8),
+                PlyProperty::scalar("blue".to_string(), ScalarType::U8),
             ],
         }],
         comments: vec![],
@@ -292,18 +238,9 @@ fn test_simple_ascii_output() {
             name: "vertex".to_string(),
             count: vertices.len(),
             properties: vec![
-                PropertyType::Scalar {
-                    data_type: ScalarType::F32,
-                    name: "x".to_string(),
-                },
-                PropertyType::Scalar {
-                    data_type: ScalarType::F32,
-                    name: "y".to_string(),
-                },
-                PropertyType::Scalar {
-                    data_type: ScalarType::F32,
-                    name: "z".to_string(),
-                },
+                PlyProperty::scalar("x".to_string(), ScalarType::F32),
+                PlyProperty::scalar("y".to_string(), ScalarType::F32),
+                PlyProperty::scalar("z".to_string(), ScalarType::F32),
             ],
         }],
         comments: vec![],
@@ -334,18 +271,9 @@ fn test_to_string_rejects_binary_format() {
             name: "vertex".to_string(),
             count: vertices.len(),
             properties: vec![
-                PropertyType::Scalar {
-                    data_type: ScalarType::F32,
-                    name: "x".to_string(),
-                },
-                PropertyType::Scalar {
-                    data_type: ScalarType::F32,
-                    name: "y".to_string(),
-                },
-                PropertyType::Scalar {
-                    data_type: ScalarType::F32,
-                    name: "z".to_string(),
-                },
+                PlyProperty::scalar("x".to_string(), ScalarType::F32),
+                PlyProperty::scalar("y".to_string(), ScalarType::F32),
+                PlyProperty::scalar("z".to_string(), ScalarType::F32),
             ],
         }],
         comments: vec![],

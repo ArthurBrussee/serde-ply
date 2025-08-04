@@ -1,21 +1,6 @@
-//! PLY deserializer implementation
-//!
-//! PERFORMANCE NOTE: The main bottleneck in PLY deserialization is field name lookups
-//! during map-based deserialization. Each field access requires string comparisons to
-//! match field names from the PLY header to struct field names. For structures with
-//! many fields (like GaussianSplat with 58 fields), this becomes a significant overhead.
-//!
-//! Potential optimizations for users requiring maximum performance:
-//! 1. Use tuple structs instead of named structs to enable sequence-based deserialization
-//! 2. Implement custom Deserialize that uses positional field access
-//! 3. Pre-compute field mappings for homogeneous element types
-//!
-//! The current implementation prioritizes serde ecosystem compatibility and ease of use
-//! over raw performance.
-
-use crate::{PlyError, PropertyType};
+use crate::{ElementDef, PlyError, PropertyType};
 use byteorder::{ByteOrder, ReadBytesExt};
-use serde::de::{self, DeserializeSeed, MapAccess, Visitor};
+use serde::de::{self, DeserializeSeed, Deserializer, MapAccess, Visitor};
 
 use serde::de::value::StrDeserializer;
 use std::{io::BufRead, marker::PhantomData};
@@ -23,90 +8,45 @@ use std::{io::BufRead, marker::PhantomData};
 pub(crate) struct AsciiElementDeserializer<R> {
     pub reader: R,
     pub elements_read: usize,
-    pub element_count: usize,
+
+    pub elem_def: ElementDef,
+
     pub line_buffer: String,
     pub current_line: String,
     pub token_start: usize,
-    pub properties: Vec<PropertyType>,
 }
 
-pub(crate) struct BinaryElementDeserializer<R, E> {
-    pub reader: R,
-    pub elements_read: usize,
-    pub element_count: usize,
-    pub properties: Vec<PropertyType>,
-    pub property_names: Vec<String>,
-    pub _endian: PhantomData<E>,
-}
-
-impl<R: BufRead> AsciiElementDeserializer<R> {
-    pub fn new(reader: R, element_count: usize, properties: Vec<PropertyType>) -> Self {
+impl<'a, R: BufRead> AsciiElementDeserializer<R> {
+    pub fn new(reader: R, elem_def: ElementDef) -> Self {
         Self {
             reader,
             elements_read: 0,
-            element_count,
+            elem_def,
             line_buffer: String::new(),
             current_line: String::new(),
             token_start: 0,
-            properties,
         }
     }
 
-    pub fn next_element<T>(&mut self) -> Result<Option<T>, PlyError>
+    pub fn next_element<T>(&'a mut self) -> Result<Option<T>, PlyError>
     where
         T: for<'de> serde::Deserialize<'de>,
     {
-        if self.elements_read >= self.element_count {
+        if self.elements_read >= self.elem_def.count {
             return Ok(None);
         }
-
         self.elements_read += 1;
         self.read_ascii_line()?;
         self.token_start = 0;
-        let element = T::deserialize(AsciiDirectElementDeserializer { parent: self })?;
-        Ok(Some(element))
-    }
-}
-
-impl<'a, R: BufRead, E: ByteOrder> BinaryElementDeserializer<R, E> {
-    pub fn new(
-        reader: R,
-        element_count: usize,
-        properties: Vec<PropertyType>,
-        property_names: Vec<String>,
-    ) -> Self {
-        Self {
-            reader,
-            elements_read: 0,
-            element_count,
-            properties,
-            property_names,
-            _endian: PhantomData,
-        }
-    }
-
-    pub fn next_element<T>(&mut self) -> Result<Option<T>, PlyError>
-    where
-        T: for<'de> serde::Deserialize<'de>,
-    {
-        if self.elements_read >= self.element_count {
-            return Ok(None);
-        }
-
-        self.elements_read += 1;
-        let element = T::deserialize(BinaryDirectElementDeserializer {
-            parent: self,
-            _endian: PhantomData,
-        })?;
+        let element = T::deserialize(AsciiRowMapDeserializer { parent: self })?;
         Ok(Some(element))
     }
 }
 
 impl<R: BufRead> AsciiElementDeserializer<R> {
-    fn read_ascii_line(&mut self) -> Result<(), PlyError> {
+    pub fn read_ascii_line(&mut self) -> Result<(), PlyError> {
         self.line_buffer.clear();
         self.reader.read_line(&mut self.line_buffer)?;
-
         // Store trimmed line for token parsing
         self.current_line.clear();
         self.current_line.push_str(self.line_buffer.trim());
@@ -114,16 +54,44 @@ impl<R: BufRead> AsciiElementDeserializer<R> {
     }
 }
 
-pub(crate) struct AsciiDirectElementDeserializer<'a, R> {
+pub(crate) struct AsciiRowMapDeserializer<'a, R> {
     pub parent: &'a mut AsciiElementDeserializer<R>,
 }
 
-pub(crate) struct BinaryDirectElementDeserializer<'a, R, E> {
-    pub parent: &'a mut BinaryElementDeserializer<R, E>,
+pub(crate) struct BinaryElementDeserializer<R, E> {
+    pub reader: R,
+    pub elements_read: usize,
+    pub elem_def: ElementDef,
     pub _endian: PhantomData<E>,
 }
 
-impl<'de, 'a, R: BufRead> de::Deserializer<'de> for AsciiDirectElementDeserializer<'a, R> {
+impl<'a, R: BufRead, E: ByteOrder> BinaryElementDeserializer<R, E> {
+    pub fn new(reader: R, elem_def: ElementDef) -> Self {
+        Self {
+            reader,
+            elements_read: 0,
+            elem_def,
+            _endian: PhantomData,
+        }
+    }
+
+    pub fn next_element<T>(&'a mut self) -> Result<Option<T>, PlyError>
+    where
+        T: for<'de> serde::Deserialize<'de>,
+    {
+        if self.elements_read >= self.elem_def.count {
+            return Ok(None);
+        }
+        self.elements_read += 1;
+        let element = T::deserialize(BinaryRowMapDeserializer {
+            parent: self,
+            _endian: PhantomData,
+        })?;
+        Ok(Some(element))
+    }
+}
+
+impl<'de, 'a, R: BufRead> Deserializer<'de> for AsciiRowMapDeserializer<'a, R> {
     type Error = PlyError;
 
     fn deserialize_any<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
@@ -144,22 +112,20 @@ impl<'de, 'a, R: BufRead> de::Deserializer<'de> for AsciiDirectElementDeserializ
     where
         V: Visitor<'de>,
     {
-        let map_access = AsciiDirectMapAccess {
+        visitor.visit_map(AsciiRowMapAccess {
             parent: self.parent,
             current_property: 0,
-        };
-        visitor.visit_map(map_access)
+        })
     }
 
     fn deserialize_map<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        let map_access = AsciiDirectMapAccess {
+        visitor.visit_map(AsciiRowMapAccess {
             parent: self.parent,
             current_property: 0,
-        };
-        visitor.visit_map(map_access)
+        })
     }
 
     serde::forward_to_deserialize_any! {
@@ -169,84 +135,22 @@ impl<'de, 'a, R: BufRead> de::Deserializer<'de> for AsciiDirectElementDeserializ
     }
 }
 
-impl<'de, 'a, R: BufRead, E: ByteOrder> de::Deserializer<'de>
-    for BinaryDirectElementDeserializer<'a, R, E>
-{
-    type Error = PlyError;
-
-    fn deserialize_any<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        Err(PlyError::Serde(
-            "deserialize_any not supported - struct fields must have specific types".to_string(),
-        ))
-    }
-
-    fn deserialize_struct<V>(
-        self,
-        _name: &'static str,
-        _fields: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        let map_access = BinaryDirectMapAccess {
-            parent: self.parent,
-            current_property: 0,
-            _endian: PhantomData,
-        };
-        visitor.visit_map(map_access)
-    }
-
-    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        let map_access = BinaryDirectMapAccess {
-            parent: self.parent,
-            current_property: 0,
-            _endian: PhantomData,
-        };
-        visitor.visit_map(map_access)
-    }
-
-    serde::forward_to_deserialize_any! {
-        bool i8 u8 i16 u16 i32 u32 i64 u64 f32 f64 char str string
-        bytes byte_buf option unit unit_struct newtype_struct seq tuple
-        tuple_struct enum identifier ignored_any
-    }
-}
-
-struct AsciiDirectMapAccess<'a, R> {
+struct AsciiRowMapAccess<'a, R> {
     parent: &'a mut AsciiElementDeserializer<R>,
     current_property: usize,
 }
 
-struct BinaryDirectMapAccess<'a, R, E> {
-    parent: &'a mut BinaryElementDeserializer<R, E>,
-    current_property: usize,
-    _endian: PhantomData<E>,
-}
-
-impl<'de, 'a, R: BufRead> MapAccess<'de> for AsciiDirectMapAccess<'a, R> {
+impl<'de, 'a, R: BufRead> MapAccess<'de> for AsciiRowMapAccess<'a, R> {
     type Error = PlyError;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where
         K: DeserializeSeed<'de>,
     {
-        if self.current_property >= self.parent.properties.len() {
+        let Some(prop) = self.parent.elem_def.properties.get(self.current_property) else {
             return Ok(None);
-        }
-
-        let property = &self.parent.properties[self.current_property];
-        let field_name = match property {
-            PropertyType::Scalar { name, .. } => name,
-            PropertyType::List { name, .. } => name,
         };
-        seed.deserialize(StrDeserializer::new(field_name)).map(Some)
+        seed.deserialize(StrDeserializer::new(&prop.name)).map(Some)
     }
 
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
@@ -262,20 +166,80 @@ impl<'de, 'a, R: BufRead> MapAccess<'de> for AsciiDirectMapAccess<'a, R> {
     }
 }
 
-impl<'de, 'a, R: BufRead, E: ByteOrder> MapAccess<'de> for BinaryDirectMapAccess<'a, R, E> {
+/// ASCII sequence access for PLY lists
+struct AsciiSeqAccess<'a, R> {
+    parent: &'a mut AsciiElementDeserializer<R>,
+    remaining: usize,
+    property_index: usize,
+}
+
+pub(crate) struct BinaryRowMapDeserializer<'a, R, E> {
+    pub parent: &'a mut BinaryElementDeserializer<R, E>,
+    pub _endian: PhantomData<E>,
+}
+
+impl<'de, 'a, R: BufRead, E: ByteOrder> Deserializer<'de> for BinaryRowMapDeserializer<'a, R, E> {
+    type Error = PlyError;
+
+    fn deserialize_any<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        // TODO: We could support this just fine?
+        unreachable!();
+    }
+
+    fn deserialize_struct<V>(
+        self,
+        _name: &'static str,
+        _fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        visitor.visit_map(BinaryRowMap {
+            parent: self.parent,
+            current_property: 0,
+            _endian: PhantomData,
+        })
+    }
+
+    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        visitor.visit_map(BinaryRowMap {
+            parent: self.parent,
+            current_property: 0,
+            _endian: PhantomData,
+        })
+    }
+
+    serde::forward_to_deserialize_any! {
+        bool i8 u8 i16 u16 i32 u32 i64 u64 f32 f64 char str string
+        bytes byte_buf option unit unit_struct newtype_struct seq tuple
+        tuple_struct enum identifier ignored_any
+    }
+}
+
+struct BinaryRowMap<'a, R, E> {
+    parent: &'a mut BinaryElementDeserializer<R, E>,
+    current_property: usize,
+    _endian: PhantomData<E>,
+}
+
+impl<'de, 'a, R: BufRead, E: ByteOrder> MapAccess<'de> for BinaryRowMap<'a, R, E> {
     type Error = PlyError;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where
         K: DeserializeSeed<'de>,
     {
-        let field_name = &self.parent.property_names.get(self.current_property);
-
-        if let Some(name) = field_name {
-            seed.deserialize(StrDeserializer::new(name)).map(Some)
-        } else {
-            Ok(None)
-        }
+        let Some(prop) = &self.parent.elem_def.properties.get(self.current_property) else {
+            return Ok(None);
+        };
+        seed.deserialize(StrDeserializer::new(&prop.name)).map(Some)
     }
 
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
@@ -305,19 +269,17 @@ struct BinaryValueDeserializer<'a, R, E> {
     _endian: PhantomData<E>,
 }
 
-impl<'de, 'a, R: BufRead> de::Deserializer<'de> for AsciiValueDeserializer<'a, R> {
+impl<'de, 'a, R: BufRead> Deserializer<'de> for AsciiValueDeserializer<'a, R> {
     type Error = PlyError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        if self.property_index >= self.parent.properties.len() {
+        let Some(property) = self.parent.elem_def.properties.get(self.property_index) else {
             return Err(PlyError::Serde("Property index out of bounds".to_string()));
-        }
-
-        let property = &self.parent.properties[self.property_index];
-        match property {
+        };
+        match property.property_type {
             PropertyType::Scalar { data_type, .. } => {
                 use crate::ScalarType;
                 match data_type {
@@ -457,21 +419,18 @@ impl<'de, 'a, R: BufRead> de::Deserializer<'de> for AsciiValueDeserializer<'a, R
     }
 }
 
-impl<'de, 'a, R: BufRead, E: ByteOrder> de::Deserializer<'de>
-    for BinaryValueDeserializer<'a, R, E>
-{
+impl<'de, 'a, R: BufRead, E: ByteOrder> Deserializer<'de> for BinaryValueDeserializer<'a, R, E> {
     type Error = PlyError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        if self.property_index >= self.parent.properties.len() {
+        let Some(property) = &self.parent.elem_def.properties.get(self.property_index) else {
             return Err(PlyError::Serde("Property index out of bounds".to_string()));
-        }
+        };
 
-        let property = &self.parent.properties[self.property_index];
-        match property {
+        match property.property_type {
             PropertyType::Scalar { data_type, .. } => {
                 use crate::ScalarType;
                 match data_type {
@@ -560,13 +519,12 @@ impl<'de, 'a, R: BufRead, E: ByteOrder> de::Deserializer<'de>
         // Read count from binary data based on list's count type
         let count = self.parent.reader.read_u8()? as usize; // Simplified - should use actual count type
 
-        let seq_access = BinarySeqAccess {
+        visitor.visit_seq(BinarySeqAccess {
             parent: self.parent,
             remaining: count,
             property_index: self.property_index,
             _endian: PhantomData,
-        };
-        visitor.visit_seq(seq_access)
+        })
     }
 
     fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -591,6 +549,7 @@ impl<'a, R: BufRead> AsciiValueDeserializer<'a, R> {
         let line_bytes = line.as_bytes();
         let mut start = self.parent.token_start;
 
+        // TODO: Definitely faster ways of doing this...
         // Skip leading whitespace using byte operations
         while start < line_bytes.len() && line_bytes[start].is_ascii_whitespace() {
             start += 1;
@@ -611,13 +570,6 @@ impl<'a, R: BufRead> AsciiValueDeserializer<'a, R> {
         self.parent.token_start = end;
         Ok(&line[start..end])
     }
-}
-
-/// ASCII sequence access for PLY lists
-struct AsciiSeqAccess<'a, R> {
-    parent: &'a mut AsciiElementDeserializer<R>,
-    remaining: usize,
-    property_index: usize,
 }
 
 /// Binary sequence access for PLY lists
