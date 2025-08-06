@@ -182,8 +182,7 @@ fn bench_gaussian_splat(c: &mut Criterion) {
     group.bench_with_input("gaussian_splat", &data_after_header, |b, data| {
         b.iter(|| {
             let cursor = Cursor::new(black_box(data));
-            let splats: Vec<GaussianSplat> =
-                serde_ply::PlyFile::parse_elements(cursor, &header, "vertex").unwrap();
+            let splats: Vec<GaussianSplat> = serde_ply::parse_elements(cursor, &header).unwrap();
             black_box(splats)
         });
     });

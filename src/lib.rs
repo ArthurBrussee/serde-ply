@@ -1,15 +1,17 @@
-//! High-performance PLY parser with chunked loading support
-
 mod de;
 mod ply_file;
 mod ser;
 
+use byteorder::{BigEndian, LittleEndian};
 pub use ply_file::PlyFile;
 
-use std::io::BufRead;
+use std::io::{BufRead, Read};
+use std::num::{ParseFloatError, ParseIntError};
 use std::str::FromStr;
 use std::{fmt, string::FromUtf8Error};
 use thiserror::Error;
+
+use crate::de::{AsciiRowDeserializer, BinaryRowDeserializer};
 
 #[derive(Error, Debug)]
 pub enum PlyError {
@@ -25,14 +27,17 @@ pub enum PlyError {
     #[error("Unsupported PLY format: {0}")]
     UnsupportedFormat(String),
 
+    #[error("Parse error: {0}")]
+    ParseIntError(#[from] ParseIntError),
+
+    #[error("Parse error: {0}")]
+    ParseFloatError(#[from] ParseFloatError),
+
     #[error("Property type mismatch: expected {expected}, found {found}")]
     TypeMismatch { expected: String, found: String },
 
     #[error("Missing required element: {0}")]
     MissingElement(String),
-
-    #[error("Not enough data available")]
-    NotEnoughData,
 
     #[error("Serde error: {0}")]
     Serde(String),
@@ -67,7 +72,6 @@ impl fmt::Display for PlyFormat {
     }
 }
 
-// TODO: Idk if rust has some builtin way? All these are existing scalar types, but probably no clean way to do it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ScalarType {
     I8,
@@ -155,7 +159,7 @@ impl PlyProperty {
 #[derive(Debug, Clone)]
 pub struct ElementDef {
     pub name: String,
-    pub count: usize,
+    pub row_count: usize,
     pub properties: Vec<PlyProperty>,
 }
 
@@ -244,7 +248,7 @@ impl PlyHeader {
 
                     current_element = Some(ElementDef {
                         name,
-                        count,
+                        row_count: count,
                         properties: Vec::new(),
                     });
                 }
@@ -307,11 +311,39 @@ impl PlyHeader {
         })
     }
 
-    pub fn get_element(&self, name: &str) -> Option<&ElementDef> {
-        self.elements.iter().find(|e| e.name == name)
+    pub fn get_element(&self, name: &str) -> Option<ElementDef> {
+        self.elements.iter().find(|e| e.name == name).cloned()
     }
 
     pub fn has_element(&self, name: &str) -> bool {
         self.elements.iter().any(|e| e.name == name)
+    }
+}
+
+// TODO: Delete when everythign is moved to 'native' serde.
+pub fn parse_elements<T>(
+    mut reader: impl Read,
+    header: &PlyHeader,
+) -> impl Iterator<Item = Result<T, PlyError>>
+where
+    T: for<'de> serde::Deserialize<'de>,
+{
+    let element_def = &header.elements[0];
+
+    match header.format {
+        PlyFormat::Ascii => {
+            let mut deserializer = AsciiRowDeserializer::new(&mut reader, element_def.clone());
+            (0..element_def.row_count).map(|_| T::deserialize(&mut deserializer))
+        }
+        PlyFormat::BinaryLittleEndian => {
+            let mut deserializer =
+                BinaryRowDeserializer::<_, LittleEndian>::new(&mut reader, element_def.clone());
+            (0..element_def.row_count).map(|_| T::deserialize(&mut deserializer))
+        }
+        PlyFormat::BinaryBigEndian => {
+            let mut deserializer =
+                BinaryRowDeserializer::<_, BigEndian>::new(&mut reader, element_def.clone());
+            (0..element_def.row_count).map(|_| T::deserialize(&mut deserializer))
+        }
     }
 }

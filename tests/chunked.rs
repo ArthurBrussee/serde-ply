@@ -1,5 +1,3 @@
-//! Focused tests for chunked PLY loading functionality
-
 use serde::Deserialize;
 use serde_ply::PlyFile;
 

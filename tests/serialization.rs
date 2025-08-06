@@ -1,5 +1,3 @@
-//! Comprehensive serialization tests
-
 use serde::Serialize;
 use serde_ply::{ElementDef, PlyFormat, PlyHeader, PlyProperty, ScalarType};
 use std::io::Cursor;
@@ -57,7 +55,7 @@ fn test_complete_binary_ply_file() {
         elements: vec![
             ElementDef {
                 name: "vertex".to_string(),
-                count: vertices.len(),
+                row_count: vertices.len(),
                 properties: vec![
                     PlyProperty::scalar("x".to_string(), ScalarType::F32),
                     PlyProperty::scalar("y".to_string(), ScalarType::F32),
@@ -69,7 +67,7 @@ fn test_complete_binary_ply_file() {
             },
             ElementDef {
                 name: "face".to_string(),
-                count: faces.len(),
+                row_count: faces.len(),
                 properties: vec![PlyProperty::list(
                     "vertex_indices".to_string(),
                     ScalarType::U8,
@@ -129,7 +127,7 @@ fn test_binary_round_trip() {
         version: "1.0".to_string(),
         elements: vec![ElementDef {
             name: "vertex".to_string(),
-            count: original_vertices.len(),
+            row_count: original_vertices.len(),
             properties: vec![
                 PlyProperty::scalar("x".to_string(), ScalarType::F32),
                 PlyProperty::scalar("y".to_string(), ScalarType::F32),
@@ -149,7 +147,7 @@ fn test_binary_round_trip() {
     let mut reader = std::io::BufReader::new(cursor);
     let parsed_header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
     let deserialized_vertices: Vec<RoundTripVertex> =
-        serde_ply::PlyFile::parse_elements(&mut reader, &parsed_header, "vertex").unwrap();
+        serde_ply::parse_elements(&mut reader, &parsed_header).unwrap();
 
     assert_eq!(original_vertices, deserialized_vertices);
 }
@@ -190,7 +188,7 @@ fn test_ascii_round_trip() {
         version: "1.0".to_string(),
         elements: vec![ElementDef {
             name: "vertex".to_string(),
-            count: original_vertices.len(),
+            row_count: original_vertices.len(),
             properties: vec![
                 PlyProperty::scalar("x".to_string(), ScalarType::F32),
                 PlyProperty::scalar("y".to_string(), ScalarType::F32),
@@ -211,7 +209,7 @@ fn test_ascii_round_trip() {
     let mut reader = std::io::BufReader::new(cursor);
     let parsed_header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
     let deserialized_vertices: Vec<RoundTripVertex> =
-        serde_ply::PlyFile::parse_elements(&mut reader, &parsed_header, "vertex").unwrap();
+        serde_ply::parse_elements(&mut reader, &parsed_header).unwrap();
 
     assert_eq!(original_vertices, deserialized_vertices);
 }
@@ -236,7 +234,7 @@ fn test_simple_ascii_output() {
         version: "1.0".to_string(),
         elements: vec![ElementDef {
             name: "vertex".to_string(),
-            count: vertices.len(),
+            row_count: vertices.len(),
             properties: vec![
                 PlyProperty::scalar("x".to_string(), ScalarType::F32),
                 PlyProperty::scalar("y".to_string(), ScalarType::F32),
@@ -269,7 +267,7 @@ fn test_to_string_rejects_binary_format() {
         version: "1.0".to_string(),
         elements: vec![ElementDef {
             name: "vertex".to_string(),
-            count: vertices.len(),
+            row_count: vertices.len(),
             properties: vec![
                 PlyProperty::scalar("x".to_string(), ScalarType::F32),
                 PlyProperty::scalar("y".to_string(), ScalarType::F32),

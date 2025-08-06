@@ -1,5 +1,3 @@
-//! Basic PLY parsing and writing
-
 use serde::{Deserialize, Serialize};
 use std::io::{BufReader, Cursor};
 
@@ -42,8 +40,8 @@ end_header
     let mut reader = BufReader::new(cursor);
     let header = serde_ply::PlyHeader::parse(&mut reader)?;
 
-    let vertices: Vec<Vertex> = serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex")?;
-    let faces: Vec<Face> = serde_ply::PlyFile::parse_elements(&mut reader, &header, "face")?;
+    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header)?;
+    let faces: Vec<Face> = serde_ply::parse_elements(&mut reader, &header)?;
 
     println!(
         "Parsed {} vertices and {} faces",
@@ -59,7 +57,7 @@ end_header
         version: "1.0".to_string(),
         elements: vec![ElementDef {
             name: "vertex".to_string(),
-            count: vertices.len(),
+            row_count: vertices.len(),
             properties: vec![
                 PlyProperty::scalar("x".to_string(), ScalarType::F32),
                 PlyProperty::scalar("y".to_string(), ScalarType::F32),

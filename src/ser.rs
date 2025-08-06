@@ -66,7 +66,11 @@ impl<W: Write> PlySerializer<W> {
             }
 
             for element in &header.elements {
-                writeln!(self.writer, "element {} {}", element.name, element.count)?;
+                writeln!(
+                    self.writer,
+                    "element {} {}",
+                    element.name, element.row_count
+                )?;
 
                 for property in &element.properties {
                     match &property.property_type {
@@ -691,7 +695,7 @@ mod tests {
             version: "1.0".to_string(),
             elements: vec![ElementDef {
                 name: "vertex".to_string(),
-                count: 3,
+                row_count: 3,
                 properties: vec![
                     PlyProperty {
                         name: "x".to_string(),

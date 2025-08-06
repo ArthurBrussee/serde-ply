@@ -1,165 +1,119 @@
 use crate::{
-    de::{
-        find_header_end, AsciiElementDeserializer, AsciiRowMapDeserializer,
-        BinaryElementDeserializer,
-    },
-    ElementDef, PlyError, PlyFormat, PlyHeader, PlyProperty,
+    de::{AsciiRowDeserializer, BinaryRowDeserializer},
+    PlyError, PlyFormat, PlyHeader,
 };
-use byteorder::ByteOrder;
 use serde::Deserialize;
-use std::io::BufRead;
+use std::io::Cursor;
 
 #[derive(Debug)]
 pub(crate) struct ChunkedFileParser {
     pub header: PlyHeader,
     pub current_element_index: usize,
-    pub elements_parsed_in_current: usize,
+    pub rows_parsed: usize,
 }
 
 pub(crate) enum ParseChunk<T> {
-    Advance(Vec<T>, usize),
-    Done,
+    Chunk(Vec<T>),
+    Complete,
+}
+
+/// Find the position of the last byte in "end_header\n"
+fn find_header_end(buffer: &[u8]) -> Option<usize> {
+    let pattern = b"end_header\n";
+
+    if buffer.len() < pattern.len() {
+        return None;
+    }
+
+    for i in 0..=(buffer.len() - pattern.len()) {
+        if &buffer[i..i + pattern.len()] == pattern {
+            return Some(i + pattern.len() - 1);
+        }
+    }
+
+    None
 }
 
 impl ChunkedFileParser {
     /// Parse elements of a specific type from buffered data. This returns Ok(Vec) as long as there are elements remaining.
     /// When no more elemnts remain, this will return None.
-    pub fn parse_chunk<T>(&mut self, buffer: &[u8]) -> Result<ParseChunk<T>, PlyError>
+    pub fn parse_chunk<T>(
+        &mut self,
+        mut cursor: &mut Cursor<&Vec<u8>>,
+    ) -> Result<ParseChunk<T>, PlyError>
     where
         T: for<'de> serde::Deserialize<'de>,
     {
         // Check if we've moved past all elements
         if self.current_element_index >= self.header.elements.len() {
-            return Ok(ParseChunk::Done);
+            return Ok(ParseChunk::Complete);
         }
 
         // Find the element definition and clone it to avoid borrowing issues
         // TODO: Ideally, we wouldn't need to clone the element def here.
-        let element_def = self.header.elements[self.current_element_index].clone();
+        let mut element_def = self.header.elements[self.current_element_index].clone();
 
-        let ret = match self.header.format {
-            PlyFormat::Ascii => self.parse_ascii_chunk::<T>(&element_def, buffer),
-            PlyFormat::BinaryLittleEndian => {
-                self.parse_binary_chunk::<T, byteorder::LittleEndian>(&element_def, buffer)
-            }
-            PlyFormat::BinaryBigEndian => {
-                self.parse_binary_chunk::<T, byteorder::BigEndian>(&element_def, buffer)
-            }
-        };
-
-        // Check if we've already finished parsing this element type
-        if self.elements_parsed_in_current >= element_def.count {
+        while self.rows_parsed >= element_def.row_count {
             // Advance to the next element.
             self.current_element_index += 1;
-            self.elements_parsed_in_current = 0;
-        }
+            self.rows_parsed = 0;
+            element_def = self.header.elements[self.current_element_index].clone();
 
-        ret
-    }
-
-    fn parse_ascii_chunk<T>(
-        &mut self,
-        element_def: &ElementDef,
-        buffer: &[u8],
-    ) -> Result<ParseChunk<T>, PlyError>
-    where
-        T: for<'de> serde::Deserialize<'de>,
-    {
-        let remaining_elements = element_def.count - self.elements_parsed_in_current;
-        let mut elements = Vec::with_capacity(remaining_elements);
-        let mut bytes_consumed = 0;
-        let mut cursor = 0;
-
-        // Parse lines from the buffer
-        while cursor < buffer.len() && self.elements_parsed_in_current < element_def.count {
-            // Find the next newline
-            if let Some(newline_pos) = buffer[cursor..].iter().position(|&b| b == b'\n') {
-                let line_end = cursor + newline_pos;
-                let line_bytes = &buffer[cursor..line_end];
-
-                // Convert to string, skipping invalid UTF-8
-                if let Ok(line) = std::str::from_utf8(line_bytes) {
-                    let line = line.trim();
-                    if !line.is_empty() {
-                        let element = self.parse_ascii_line::<T>(line, &element_def.properties)?;
-                        elements.push(element);
-                        self.elements_parsed_in_current += 1;
-                    }
-                }
-
-                cursor = line_end + 1; // Move past the newline
-                bytes_consumed = cursor;
-            } else {
-                // No complete line found, need more data
-                break;
+            // Check if we've moved past all elements
+            if self.current_element_index >= self.header.elements.len() {
+                return Ok(ParseChunk::Complete);
             }
         }
 
-        Ok(ParseChunk::Advance(elements, bytes_consumed))
-    }
+        let mut elements = Vec::with_capacity(64);
 
-    fn parse_binary_chunk<T, E: ByteOrder>(
-        &mut self,
-        element_def: &ElementDef,
-        buffer: &[u8],
-    ) -> Result<ParseChunk<T>, PlyError>
-    where
-        T: for<'de> serde::Deserialize<'de>,
-    {
-        let cursor = std::io::Cursor::new(buffer);
-        let mut total_bytes_consumed = 0;
-        let remaining_elements = element_def.count - self.elements_parsed_in_current;
-        let mut elements = Vec::with_capacity(remaining_elements);
+        // TODO: Seperate loop per format.
+        // Parse lines from the buffer.
+        loop {
+            let start_cursor_pos = cursor.position();
 
-        // Create deserializer once and reuse it
-        let mut deserializer = BinaryElementDeserializer::<_, E>::new(cursor, element_def.clone());
+            // TODO: This if should hopefully be moved out of the loop automatically, but maybe
+            // double check if that's the case.
+            let elem = match self.header.format {
+                PlyFormat::Ascii => T::deserialize(&mut AsciiRowDeserializer::new(
+                    &mut cursor,
+                    element_def.clone(),
+                )),
+                PlyFormat::BinaryLittleEndian => T::deserialize(&mut BinaryRowDeserializer::<
+                    _,
+                    byteorder::LittleEndian,
+                >::new(
+                    &mut cursor,
+                    element_def.clone(),
+                )),
+                PlyFormat::BinaryBigEndian => {
+                    T::deserialize(&mut BinaryRowDeserializer::<_, byteorder::BigEndian>::new(
+                        &mut cursor,
+                        element_def.clone(),
+                    ))
+                }
+            };
 
-        // Parse elements reusing the same deserializer
-        for _ in 0..remaining_elements {
-            let position_before = deserializer.reader.position();
-
-            match deserializer.next_element::<T>() {
-                Ok(Some(element)) => {
+            match elem {
+                Ok(element) => {
                     elements.push(element);
-                    let position_after = deserializer.reader.position();
-                    let bytes_consumed = position_after - position_before;
-                    total_bytes_consumed += bytes_consumed as usize;
                 }
-                Ok(None) => break,
+                // Not enough data for this element, stop here
                 Err(PlyError::Io(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                    // Not enough data for this element, stop here
-                    break;
-                }
-                Err(PlyError::NotEnoughData) => {
-                    // Not enough data for this element, stop here
+                    cursor.set_position(start_cursor_pos);
                     break;
                 }
                 Err(e) => return Err(e), // Other errors
             }
+
+            // Break when parsed all elements.
+            self.rows_parsed += 1;
+            if self.rows_parsed >= element_def.row_count {
+                break;
+            }
         }
 
-        self.elements_parsed_in_current += elements.len();
-        Ok(ParseChunk::Advance(elements, total_bytes_consumed))
-    }
-
-    fn parse_ascii_line<T>(&self, line: &str, properties: &[PlyProperty]) -> Result<T, PlyError>
-    where
-        T: for<'de> serde::Deserialize<'de>,
-    {
-        let elem_def = crate::ElementDef {
-            name: "line".to_string(),
-            count: 1,
-            properties: properties.to_vec(),
-        };
-        let mut deserializer =
-            AsciiElementDeserializer::new(std::io::Cursor::new(format!("{line}\n")), elem_def);
-
-        // Read the line into the deserializer's state
-        deserializer.read_ascii_line()?;
-
-        T::deserialize(AsciiRowMapDeserializer {
-            parent: &mut deserializer,
-        })
+        Ok(ParseChunk::Chunk(elements))
     }
 }
 
@@ -208,7 +162,7 @@ impl PlyFile {
                     let file_parser = ChunkedFileParser {
                         header,
                         current_element_index: 0,
-                        elements_parsed_in_current: 0,
+                        rows_parsed: 0,
                     };
 
                     self.state = ParseState::ParsingElements {
@@ -255,13 +209,15 @@ impl PlyFile {
         // Make sure header is parsed
         let _ = self.header();
 
+        let mut cursor = Cursor::new(&self.data_buffer);
+
         match &mut self.state {
             ParseState::ParsingElements { parser } => {
-                match parser.parse_chunk::<T>(&self.data_buffer)? {
-                    ParseChunk::Advance(elements, bytes_consumed) => {
+                match parser.parse_chunk::<T>(&mut cursor)? {
+                    ParseChunk::Chunk(elements) => {
                         // Remove consumed bytes from buffer
-                        if bytes_consumed > 0 {
-                            self.data_buffer.drain(..bytes_consumed);
+                        if cursor.position() > 0 {
+                            self.data_buffer.drain(..cursor.position() as usize);
                         }
                         if elements.is_empty() {
                             Ok(None)
@@ -269,7 +225,7 @@ impl PlyFile {
                             Ok(Some(elements))
                         }
                     }
-                    ParseChunk::Done => Ok(None),
+                    ParseChunk::Complete => Ok(None),
                 }
             }
             _ => Err(PlyError::InvalidHeader(
@@ -312,50 +268,6 @@ impl PlyFile {
         T: serde::Serialize,
     {
         crate::ser::elements_to_writer(writer, header, elements)
-    }
-
-    pub fn parse_elements<R, T>(
-        reader: R,
-        header: &PlyHeader,
-        element_name: &str,
-    ) -> Result<Vec<T>, PlyError>
-    where
-        R: BufRead,
-        T: for<'de> serde::Deserialize<'de>,
-    {
-        let element_def = header
-            .get_element(element_name)
-            .ok_or_else(|| PlyError::MissingElement(element_name.into()))?;
-        let mut results = Vec::with_capacity(element_def.count);
-
-        match header.format {
-            PlyFormat::Ascii => {
-                let mut deserializer = AsciiElementDeserializer::new(reader, element_def.clone());
-                while let Some(element) = deserializer.next_element::<T>()? {
-                    results.push(element);
-                }
-            }
-            PlyFormat::BinaryLittleEndian => {
-                let mut deserializer = BinaryElementDeserializer::<_, byteorder::LittleEndian>::new(
-                    reader,
-                    element_def.clone(),
-                );
-                while let Some(element) = deserializer.next_element::<T>()? {
-                    results.push(element);
-                }
-            }
-            PlyFormat::BinaryBigEndian => {
-                let mut deserializer = BinaryElementDeserializer::<_, byteorder::BigEndian>::new(
-                    reader,
-                    element_def.clone(),
-                );
-                while let Some(element) = deserializer.next_element::<T>()? {
-                    results.push(element);
-                }
-            }
-        }
-
-        Ok(results)
     }
 
     pub fn elements_to_writer<W, T>(

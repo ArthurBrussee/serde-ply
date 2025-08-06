@@ -1,5 +1,3 @@
-//! Chunked PLY loading with interleaved data feeding and processing
-
 use serde::Deserialize;
 use serde_ply::{PlyError, PlyFile};
 

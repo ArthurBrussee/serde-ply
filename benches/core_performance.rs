@@ -1,10 +1,9 @@
-//! Core performance benchmarks
-
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use serde::Deserialize;
 use std::io::Cursor;
 
 #[derive(Deserialize)]
+#[allow(unused)]
 struct Vertex {
     x: f32,
     y: f32,
@@ -12,6 +11,7 @@ struct Vertex {
 }
 
 #[derive(Deserialize)]
+#[allow(unused)]
 struct VertexWithColor {
     x: f32,
     y: f32,
@@ -106,8 +106,7 @@ fn benchmark_parsing(c: &mut Criterion) {
     group.bench_function("simple_binary", |b| {
         b.iter(|| {
             let mut cursor = Cursor::new(black_box(&binary_data[header_size..]));
-            let _vertices: Vec<Vertex> =
-                serde_ply::PlyFile::parse_elements(&mut cursor, &header, "vertex").unwrap();
+            let _vertices: Vec<Vertex> = serde_ply::parse_elements(&mut cursor, &header).unwrap();
         });
     });
 
@@ -120,7 +119,7 @@ fn benchmark_parsing(c: &mut Criterion) {
             let mut cursor = Cursor::new(black_box(&realistic_data));
             let header = serde_ply::PlyHeader::parse(&mut cursor).unwrap();
             let _vertices: Vec<VertexWithColor> =
-                serde_ply::PlyFile::parse_elements(&mut cursor, &header, "vertex").unwrap();
+                serde_ply::parse_elements(&mut cursor, &header).unwrap();
         });
     });
 
@@ -132,8 +131,7 @@ fn benchmark_parsing(c: &mut Criterion) {
         b.iter(|| {
             let mut cursor = Cursor::new(black_box(ascii_data.as_bytes()));
             let header = serde_ply::PlyHeader::parse(&mut cursor).unwrap();
-            let _vertices: Vec<Vertex> =
-                serde_ply::PlyFile::parse_elements(&mut cursor, &header, "vertex").unwrap();
+            let _vertices: Vec<Vertex> = serde_ply::parse_elements(&mut cursor, &header).unwrap();
         });
     });
 

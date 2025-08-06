@@ -1,97 +1,25 @@
+mod ply_file;
+
 use crate::{ElementDef, PlyError, PropertyType};
 use byteorder::{ByteOrder, ReadBytesExt};
 use serde::de::{self, DeserializeSeed, Deserializer, MapAccess, Visitor};
 
-use serde::de::value::StrDeserializer;
-use std::{io::BufRead, marker::PhantomData};
+use serde::de::value::BytesDeserializer;
+use std::io::Read;
+use std::marker::PhantomData;
 
-pub(crate) struct AsciiElementDeserializer<R> {
+pub(crate) struct AsciiRowDeserializer<R> {
     pub reader: R,
-    pub elements_read: usize,
-
     pub elem_def: ElementDef,
-
-    pub line_buffer: String,
-    pub current_line: String,
-    pub token_start: usize,
 }
 
-impl<'a, R: BufRead> AsciiElementDeserializer<R> {
+impl<R: Read> AsciiRowDeserializer<R> {
     pub fn new(reader: R, elem_def: ElementDef) -> Self {
-        Self {
-            reader,
-            elements_read: 0,
-            elem_def,
-            line_buffer: String::new(),
-            current_line: String::new(),
-            token_start: 0,
-        }
-    }
-
-    pub fn next_element<T>(&'a mut self) -> Result<Option<T>, PlyError>
-    where
-        T: for<'de> serde::Deserialize<'de>,
-    {
-        if self.elements_read >= self.elem_def.count {
-            return Ok(None);
-        }
-        self.elements_read += 1;
-        self.read_ascii_line()?;
-        self.token_start = 0;
-        let element = T::deserialize(AsciiRowMapDeserializer { parent: self })?;
-        Ok(Some(element))
+        Self { reader, elem_def }
     }
 }
 
-impl<R: BufRead> AsciiElementDeserializer<R> {
-    pub fn read_ascii_line(&mut self) -> Result<(), PlyError> {
-        self.line_buffer.clear();
-        self.reader.read_line(&mut self.line_buffer)?;
-        // Store trimmed line for token parsing
-        self.current_line.clear();
-        self.current_line.push_str(self.line_buffer.trim());
-        Ok(())
-    }
-}
-
-pub(crate) struct AsciiRowMapDeserializer<'a, R> {
-    pub parent: &'a mut AsciiElementDeserializer<R>,
-}
-
-pub(crate) struct BinaryElementDeserializer<R, E> {
-    pub reader: R,
-    pub elements_read: usize,
-    pub elem_def: ElementDef,
-    pub _endian: PhantomData<E>,
-}
-
-impl<'a, R: BufRead, E: ByteOrder> BinaryElementDeserializer<R, E> {
-    pub fn new(reader: R, elem_def: ElementDef) -> Self {
-        Self {
-            reader,
-            elements_read: 0,
-            elem_def,
-            _endian: PhantomData,
-        }
-    }
-
-    pub fn next_element<T>(&'a mut self) -> Result<Option<T>, PlyError>
-    where
-        T: for<'de> serde::Deserialize<'de>,
-    {
-        if self.elements_read >= self.elem_def.count {
-            return Ok(None);
-        }
-        self.elements_read += 1;
-        let element = T::deserialize(BinaryRowMapDeserializer {
-            parent: self,
-            _endian: PhantomData,
-        })?;
-        Ok(Some(element))
-    }
-}
-
-impl<'de, 'a, R: BufRead> Deserializer<'de> for AsciiRowMapDeserializer<'a, R> {
+impl<'de, R: Read> Deserializer<'de> for &mut AsciiRowDeserializer<R> {
     type Error = PlyError;
 
     fn deserialize_any<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
@@ -104,7 +32,7 @@ impl<'de, 'a, R: BufRead> Deserializer<'de> for AsciiRowMapDeserializer<'a, R> {
     }
 
     fn deserialize_struct<V>(
-        self,
+        mut self,
         _name: &'static str,
         _fields: &'static [&'static str],
         visitor: V,
@@ -113,17 +41,17 @@ impl<'de, 'a, R: BufRead> Deserializer<'de> for AsciiRowMapDeserializer<'a, R> {
         V: Visitor<'de>,
     {
         visitor.visit_map(AsciiRowMapAccess {
-            parent: self.parent,
+            parent: &mut self,
             current_property: 0,
         })
     }
 
-    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_map<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
         visitor.visit_map(AsciiRowMapAccess {
-            parent: self.parent,
+            parent: &mut self,
             current_property: 0,
         })
     }
@@ -136,11 +64,11 @@ impl<'de, 'a, R: BufRead> Deserializer<'de> for AsciiRowMapDeserializer<'a, R> {
 }
 
 struct AsciiRowMapAccess<'a, R> {
-    parent: &'a mut AsciiElementDeserializer<R>,
+    parent: &'a mut AsciiRowDeserializer<R>,
     current_property: usize,
 }
 
-impl<'de, 'a, R: BufRead> MapAccess<'de> for AsciiRowMapAccess<'a, R> {
+impl<'de, 'a, R: Read> MapAccess<'de> for AsciiRowMapAccess<'a, R> {
     type Error = PlyError;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
@@ -150,7 +78,10 @@ impl<'de, 'a, R: BufRead> MapAccess<'de> for AsciiRowMapAccess<'a, R> {
         let Some(prop) = self.parent.elem_def.properties.get(self.current_property) else {
             return Ok(None);
         };
-        seed.deserialize(StrDeserializer::new(&prop.name)).map(Some)
+        let result = seed
+            .deserialize(BytesDeserializer::new(prop.name.as_bytes()))
+            .map(Some);
+        result
     }
 
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
@@ -167,109 +98,18 @@ impl<'de, 'a, R: BufRead> MapAccess<'de> for AsciiRowMapAccess<'a, R> {
 }
 
 /// ASCII sequence access for PLY lists
-struct AsciiSeqAccess<'a, R> {
-    parent: &'a mut AsciiElementDeserializer<R>,
+struct AsciiListAccess<'a, R> {
+    parent: &'a mut AsciiRowDeserializer<R>,
     remaining: usize,
     property_index: usize,
 }
 
-pub(crate) struct BinaryRowMapDeserializer<'a, R, E> {
-    pub parent: &'a mut BinaryElementDeserializer<R, E>,
-    pub _endian: PhantomData<E>,
-}
-
-impl<'de, 'a, R: BufRead, E: ByteOrder> Deserializer<'de> for BinaryRowMapDeserializer<'a, R, E> {
-    type Error = PlyError;
-
-    fn deserialize_any<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        // TODO: We could support this just fine?
-        unreachable!();
-    }
-
-    fn deserialize_struct<V>(
-        self,
-        _name: &'static str,
-        _fields: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        visitor.visit_map(BinaryRowMap {
-            parent: self.parent,
-            current_property: 0,
-            _endian: PhantomData,
-        })
-    }
-
-    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        visitor.visit_map(BinaryRowMap {
-            parent: self.parent,
-            current_property: 0,
-            _endian: PhantomData,
-        })
-    }
-
-    serde::forward_to_deserialize_any! {
-        bool i8 u8 i16 u16 i32 u32 i64 u64 f32 f64 char str string
-        bytes byte_buf option unit unit_struct newtype_struct seq tuple
-        tuple_struct enum identifier ignored_any
-    }
-}
-
-struct BinaryRowMap<'a, R, E> {
-    parent: &'a mut BinaryElementDeserializer<R, E>,
-    current_property: usize,
-    _endian: PhantomData<E>,
-}
-
-impl<'de, 'a, R: BufRead, E: ByteOrder> MapAccess<'de> for BinaryRowMap<'a, R, E> {
-    type Error = PlyError;
-
-    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
-    where
-        K: DeserializeSeed<'de>,
-    {
-        let Some(prop) = &self.parent.elem_def.properties.get(self.current_property) else {
-            return Ok(None);
-        };
-        seed.deserialize(StrDeserializer::new(&prop.name)).map(Some)
-    }
-
-    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
-    where
-        V: DeserializeSeed<'de>,
-    {
-        let property_index = self.current_property;
-        self.current_property += 1;
-
-        // Let Serde decide what it wants - it will call the appropriate deserializer method
-        seed.deserialize(BinaryValueDeserializer::<_, E> {
-            parent: self.parent,
-            property_index,
-            _endian: PhantomData,
-        })
-    }
-}
-
 struct AsciiValueDeserializer<'a, R> {
-    parent: &'a mut AsciiElementDeserializer<R>,
+    parent: &'a mut AsciiRowDeserializer<R>,
     property_index: usize,
 }
 
-struct BinaryValueDeserializer<'a, R, E> {
-    parent: &'a mut BinaryElementDeserializer<R, E>,
-    property_index: usize,
-    _endian: PhantomData<E>,
-}
-
-impl<'de, 'a, R: BufRead> Deserializer<'de> for AsciiValueDeserializer<'a, R> {
+impl<'de, 'a, R: Read> Deserializer<'de> for AsciiValueDeserializer<'a, R> {
     type Error = PlyError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -302,9 +142,7 @@ impl<'de, 'a, R: BufRead> Deserializer<'de> for AsciiValueDeserializer<'a, R> {
         V: Visitor<'de>,
     {
         let token = self.read_ascii_token()?;
-        let value = token
-            .parse::<i8>()
-            .map_err(|e| PlyError::Serde(format!("Failed to parse i8: {e}")))?;
+        let value = token.parse::<i8>()?;
         visitor.visit_i8(value)
     }
 
@@ -395,7 +233,7 @@ impl<'de, 'a, R: BufRead> Deserializer<'de> for AsciiValueDeserializer<'a, R> {
             .parse::<usize>()
             .map_err(|e| PlyError::Serde(format!("Failed to parse list count: {e}")))?;
 
-        let seq_access = AsciiSeqAccess {
+        let seq_access = AsciiListAccess {
             parent: self.parent,
             remaining: count,
             property_index: self.property_index,
@@ -419,7 +257,144 @@ impl<'de, 'a, R: BufRead> Deserializer<'de> for AsciiValueDeserializer<'a, R> {
     }
 }
 
-impl<'de, 'a, R: BufRead, E: ByteOrder> Deserializer<'de> for BinaryValueDeserializer<'a, R, E> {
+impl<'a, R: Read> AsciiValueDeserializer<'a, R> {
+    fn read_ascii_token(&mut self) -> Result<String, PlyError> {
+        let mut token = String::new();
+        let mut in_token = false;
+
+        loop {
+            let mut byte = [0u8; 1];
+            match self.parent.reader.read(&mut byte) {
+                Ok(0) => break,
+                Ok(_) => {
+                    let ch = byte[0] as char;
+                    if ch.is_ascii_whitespace() {
+                        if in_token || ch == '\n' {
+                            break;
+                        }
+                    } else {
+                        in_token = true;
+                        token.push(ch);
+                    }
+                }
+                Err(e) => return Err(PlyError::Io(e)),
+            }
+        }
+
+        if !in_token {
+            return Err(PlyError::Serde("No token found".to_string()));
+        }
+
+        Ok(token)
+    }
+}
+
+pub(crate) struct BinaryRowDeserializer<R, E> {
+    pub reader: R,
+    pub elem_def: ElementDef,
+    pub _endian: PhantomData<E>,
+}
+
+impl<R: Read, E: ByteOrder> BinaryRowDeserializer<R, E> {
+    pub fn new(reader: R, elem_def: ElementDef) -> Self {
+        Self {
+            reader,
+            elem_def,
+            _endian: PhantomData,
+        }
+    }
+}
+
+impl<'de, R: Read, E: ByteOrder> Deserializer<'de> for &mut BinaryRowDeserializer<R, E> {
+    type Error = PlyError;
+
+    fn deserialize_any<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        Err(PlyError::Serde(
+            "Ply row must be a struct or map.".to_string(),
+        ))
+    }
+
+    fn deserialize_struct<V>(
+        mut self,
+        _name: &'static str,
+        _fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        visitor.visit_map(BinaryRowMap {
+            parent: &mut self,
+            current_property: 0,
+            _endian: PhantomData,
+        })
+    }
+
+    fn deserialize_map<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        visitor.visit_map(BinaryRowMap {
+            parent: &mut self,
+            current_property: 0,
+            _endian: PhantomData,
+        })
+    }
+
+    serde::forward_to_deserialize_any! {
+        bool i8 u8 i16 u16 i32 u32 i64 u64 f32 f64 char str string
+        bytes byte_buf option unit unit_struct newtype_struct seq tuple
+        tuple_struct enum identifier ignored_any
+    }
+}
+
+struct BinaryRowMap<'a, R, E> {
+    parent: &'a mut BinaryRowDeserializer<R, E>,
+    current_property: usize,
+    _endian: PhantomData<E>,
+}
+
+impl<'de, 'a, R: Read, E: ByteOrder> MapAccess<'de> for BinaryRowMap<'a, R, E> {
+    type Error = PlyError;
+
+    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
+    where
+        K: DeserializeSeed<'de>,
+    {
+        let Some(prop) = &self.parent.elem_def.properties.get(self.current_property) else {
+            return Ok(None);
+        };
+        seed.deserialize(BytesDeserializer::new(prop.name.as_bytes()))
+            .map(Some)
+    }
+
+    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
+    where
+        V: DeserializeSeed<'de>,
+    {
+        let property_index = self.current_property;
+        self.current_property += 1;
+
+        // Let Serde decide what it wants - it will call the appropriate deserializer method
+        let result = seed.deserialize(BinaryValueDeserializer::<_, E> {
+            parent: self.parent,
+            property_index,
+            _endian: PhantomData,
+        });
+        result
+    }
+}
+
+struct BinaryValueDeserializer<'a, R, E> {
+    parent: &'a mut BinaryRowDeserializer<R, E>,
+    property_index: usize,
+    _endian: PhantomData<E>,
+}
+
+impl<'de, 'a, R: Read, E: ByteOrder> Deserializer<'de> for BinaryValueDeserializer<'a, R, E> {
     type Error = PlyError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -543,44 +518,15 @@ impl<'de, 'a, R: BufRead, E: ByteOrder> Deserializer<'de> for BinaryValueDeseria
     }
 }
 
-impl<'a, R: BufRead> AsciiValueDeserializer<'a, R> {
-    fn read_ascii_token(&mut self) -> Result<&str, PlyError> {
-        let line = &self.parent.current_line;
-        let line_bytes = line.as_bytes();
-        let mut start = self.parent.token_start;
-
-        // TODO: Definitely faster ways of doing this...
-        // Skip leading whitespace using byte operations
-        while start < line_bytes.len() && line_bytes[start].is_ascii_whitespace() {
-            start += 1;
-        }
-
-        if start >= line_bytes.len() {
-            return Err(PlyError::Serde(
-                "Not enough tokens in line for element".to_string(),
-            ));
-        }
-
-        // Find end of token using byte operations
-        let mut end = start;
-        while end < line_bytes.len() && !line_bytes[end].is_ascii_whitespace() {
-            end += 1;
-        }
-
-        self.parent.token_start = end;
-        Ok(&line[start..end])
-    }
-}
-
 /// Binary sequence access for PLY lists
 struct BinarySeqAccess<'a, R, E> {
-    parent: &'a mut BinaryElementDeserializer<R, E>,
+    parent: &'a mut BinaryRowDeserializer<R, E>,
     remaining: usize,
     property_index: usize,
     _endian: PhantomData<E>,
 }
 
-impl<'de, 'a, R: BufRead> de::SeqAccess<'de> for AsciiSeqAccess<'a, R> {
+impl<'de, 'a, R: Read> de::SeqAccess<'de> for AsciiListAccess<'a, R> {
     type Error = PlyError;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
@@ -600,7 +546,7 @@ impl<'de, 'a, R: BufRead> de::SeqAccess<'de> for AsciiSeqAccess<'a, R> {
     }
 }
 
-impl<'de, 'a, R: BufRead, E: ByteOrder> de::SeqAccess<'de> for BinarySeqAccess<'a, R, E> {
+impl<'de, 'a, R: Read, E: ByteOrder> de::SeqAccess<'de> for BinarySeqAccess<'a, R, E> {
     type Error = PlyError;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
@@ -619,21 +565,4 @@ impl<'de, 'a, R: BufRead, E: ByteOrder> de::SeqAccess<'de> for BinarySeqAccess<'
         };
         seed.deserialize(deserializer).map(Some)
     }
-}
-
-/// Find the position of the last byte in "end_header\n"
-pub fn find_header_end(buffer: &[u8]) -> Option<usize> {
-    let pattern = b"end_header\n";
-
-    if buffer.len() < pattern.len() {
-        return None;
-    }
-
-    for i in 0..=(buffer.len() - pattern.len()) {
-        if &buffer[i..i + pattern.len()] == pattern {
-            return Some(i + pattern.len() - 1);
-        }
-    }
-
-    None
 }

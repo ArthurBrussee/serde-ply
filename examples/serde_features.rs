@@ -1,5 +1,3 @@
-//! Advanced serde features: field mapping, conversion, optional fields
-
 use serde::{Deserialize, Deserializer};
 
 #[derive(Deserialize, Debug)]
@@ -65,7 +63,7 @@ end_header
     let mut reader = BufReader::new(cursor);
     let header = serde_ply::PlyHeader::parse(&mut reader)?;
 
-    let vertices: Vec<Vertex> = serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex")?;
+    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header)?;
 
     for (i, vertex) in vertices.iter().enumerate() {
         println!(

@@ -1,5 +1,3 @@
-//! Consolidated serde features tests
-
 use serde::{Deserialize, Deserializer};
 use std::io::{BufReader, Cursor};
 
@@ -66,8 +64,7 @@ end_header
     let mut reader = BufReader::new(cursor);
     let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
 
-    let vertices: Vec<FlexibleVertex> =
-        serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
+    let vertices: Vec<FlexibleVertex> = serde_ply::parse_elements(&mut reader, &header).unwrap();
 
     assert_eq!(vertices.len(), 1);
     assert_eq!(vertices[0].position_x, 1.0);
@@ -113,7 +110,7 @@ end_header
         let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
 
         let vertices: Vec<FlexibleVertex> =
-            serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
+            serde_ply::parse_elements(&mut reader, &header).unwrap();
 
         assert_eq!(vertices.len(), 1, "Test case {i}");
         assert_eq!(vertices[0].position_x, 1.0, "Test case {i}");
@@ -142,8 +139,7 @@ end_header
     let mut reader = BufReader::new(cursor);
     let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
 
-    let vertices: Vec<FlexibleVertex> =
-        serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
+    let vertices: Vec<FlexibleVertex> = serde_ply::parse_elements(&mut reader, &header).unwrap();
 
     assert_eq!(vertices.len(), 2);
     assert_eq!(vertices[0].normal_x, Some(0.707));
@@ -177,8 +173,7 @@ end_header
     let mut reader = BufReader::new(cursor);
     let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
 
-    let vertices: Vec<SimpleVertex> =
-        serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
+    let vertices: Vec<SimpleVertex> = serde_ply::parse_elements(&mut reader, &header).unwrap();
 
     assert_eq!(vertices.len(), 1);
     assert_eq!(vertices[0].confidence, 0.0); // default f32 value
@@ -214,8 +209,7 @@ end_header
     let mut reader = BufReader::new(cursor);
     let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
 
-    let vertices: Vec<IndexedVertex> =
-        serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
+    let vertices: Vec<IndexedVertex> = serde_ply::parse_elements(&mut reader, &header).unwrap();
 
     assert_eq!(vertices.len(), 1);
     assert_eq!(vertices[0].id, VertexId(42));
@@ -257,7 +251,7 @@ end_header
     let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
 
     let vertices: Vec<VertexWithNormalizedIndices> =
-        serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
+        serde_ply::parse_elements(&mut reader, &header).unwrap();
 
     assert_eq!(vertices.len(), 1);
     assert_eq!(vertices[0].indices, vec![1.0, 2.0, 3.0]);
@@ -292,8 +286,7 @@ end_header
     let mut reader = BufReader::new(cursor);
     let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
 
-    let vertices: Vec<ReorderedVertex> =
-        serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
+    let vertices: Vec<ReorderedVertex> = serde_ply::parse_elements(&mut reader, &header).unwrap();
 
     assert_eq!(vertices.len(), 1);
     assert_eq!(
@@ -334,8 +327,7 @@ end_header
     let mut reader = BufReader::new(cursor);
     let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
 
-    let result =
-        serde_ply::PlyFile::parse_elements::<_, MismatchedVertex>(&mut reader, &header, "vertex");
+    let result = serde_ply::parse_elements::<MismatchedVertex>(&mut reader, &header);
     assert!(result.is_err());
 }
 
@@ -369,8 +361,7 @@ end_header
     let mut reader = BufReader::new(cursor);
     let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
 
-    let vertices: Vec<VertexWithFlatten> =
-        serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
+    let vertices: Vec<VertexWithFlatten> = serde_ply::parse_elements(&mut reader, &header).unwrap();
 
     assert_eq!(vertices.len(), 1);
     let vertex = &vertices[0];
@@ -426,8 +417,7 @@ end_header
     let mut reader = BufReader::new(cursor);
     let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
 
-    let vertices: Vec<VertexWithFlatten> =
-        serde_ply::PlyFile::parse_elements(&mut reader, &header, "vertex").unwrap();
+    let vertices: Vec<VertexWithFlatten> = serde_ply::parse_elements(&mut reader, &header).unwrap();
 
     assert_eq!(vertices.len(), 1);
     let vertex = &vertices[0];
