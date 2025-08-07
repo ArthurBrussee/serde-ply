@@ -2,9 +2,7 @@ use std::{io::Read, marker::PhantomData};
 
 use byteorder::ByteOrder;
 use serde::{
-    de::{
-        value::BytesDeserializer, DeserializeSeed, IntoDeserializer, MapAccess, SeqAccess, Visitor,
-    },
+    de::{value::BytesDeserializer, DeserializeSeed, MapAccess, SeqAccess, Visitor},
     Deserializer,
 };
 
@@ -110,78 +108,88 @@ impl<'de, 'a, 'e, R: Read, E: ByteOrder> MapAccess<'de> for BinaryRowMap<'a, 'e,
         };
         self.current_property += 1;
 
-        let reader = &mut self.parent.reader;
-        // Deserialize next value here straight away, no real need to wrap this in something else first.
-        match prop {
-            PropertyType::Scalar { data_type } => match data_type {
-                ScalarType::I8 => seed.deserialize(reader.read_i8()?.into_deserializer()),
-                ScalarType::U8 => seed.deserialize(reader.read_u8()?.into_deserializer()),
-                ScalarType::I16 => seed.deserialize(reader.read_i16::<E>()?.into_deserializer()),
-                ScalarType::U16 => seed.deserialize(reader.read_u16::<E>()?.into_deserializer()),
-                ScalarType::I32 => seed.deserialize(reader.read_i32::<E>()?.into_deserializer()),
-                ScalarType::U32 => seed.deserialize(reader.read_u32::<E>()?.into_deserializer()),
-                ScalarType::F32 => seed.deserialize(reader.read_f32::<E>()?.into_deserializer()),
-                ScalarType::F64 => seed.deserialize(reader.read_f64::<E>()?.into_deserializer()),
-            },
-            // TODO:
-            PropertyType::List {
-                count_type,
-                data_type,
-            } => seed.deserialize(BinaryListDeserializer::<_, E> {
-                count_type: *count_type,
-                data_type: *data_type,
-                reader: &mut self.parent.reader,
-                _endian: PhantomData,
-            }),
-        }
+        seed.deserialize(BinaryValueDeserializer {
+            parent: self.parent,
+            prop,
+            _endian: PhantomData::<E>,
+        })
     }
 }
 
-struct BinaryListDeserializer<'a, R, E> {
-    reader: &'a mut R,
-    count_type: ScalarType,
-    data_type: ScalarType,
+struct BinaryValueDeserializer<'a, 'e, R, E> {
+    parent: &'a mut BinaryRowDeserializer<'e, R, E>,
+    prop: &'a PropertyType,
     _endian: PhantomData<E>,
 }
 
-impl<'a, 'de, R: Read, E: ByteOrder> Deserializer<'de> for BinaryListDeserializer<'a, R, E> {
+impl<'de, 'a, 'e, R: Read, E: ByteOrder> Deserializer<'de>
+    for BinaryValueDeserializer<'a, 'e, R, E>
+{
     type Error = PlyError;
 
-    // Have to use deserialize any as we can't parse a number of something like that, so we have to check the header
-    // for what value to produce.
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        self.deserialize_seq(visitor)
+        let reader = &mut self.parent.reader;
+        match self.prop {
+            PropertyType::Scalar { data_type } => match data_type {
+                ScalarType::I8 => visitor.visit_i8(reader.read_i8()?),
+                ScalarType::U8 => visitor.visit_u8(reader.read_u8()?),
+                ScalarType::I16 => visitor.visit_i16(reader.read_i16::<E>()?),
+                ScalarType::U16 => visitor.visit_u16(reader.read_u16::<E>()?),
+                ScalarType::I32 => visitor.visit_i32(reader.read_i32::<E>()?),
+                ScalarType::U32 => visitor.visit_u32(reader.read_u32::<E>()?),
+                ScalarType::F32 => visitor.visit_f32(reader.read_f32::<E>()?),
+                ScalarType::F64 => visitor.visit_f64(reader.read_f64::<E>()?),
+            },
+            PropertyType::List { .. } => self.deserialize_seq(visitor),
+        }
+    }
+
+    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        // PLY properties are always present if defined in header
+        visitor.visit_some(self)
     }
 
     fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        let count = match self.count_type {
-            ScalarType::I8 => self.reader.read_i8()? as usize,
-            ScalarType::U8 => self.reader.read_u8()? as usize,
-            ScalarType::I16 => self.reader.read_i16::<E>()? as usize,
-            ScalarType::U16 => self.reader.read_u16::<E>()? as usize,
-            ScalarType::I32 => self.reader.read_i32::<E>()? as usize,
-            ScalarType::U32 => self.reader.read_u32::<E>()? as usize,
-            ScalarType::F32 => self.reader.read_f32::<E>()? as usize,
-            ScalarType::F64 => self.reader.read_f64::<E>()? as usize,
+        let PropertyType::List {
+            count_type,
+            data_type,
+        } = self.prop
+        else {
+            return Err(PlyError::Serde("Expected list property".to_string()));
+        };
+
+        let count = match count_type {
+            ScalarType::I8 => self.parent.reader.read_i8()? as usize,
+            ScalarType::U8 => self.parent.reader.read_u8()? as usize,
+            ScalarType::I16 => self.parent.reader.read_i16::<E>()? as usize,
+            ScalarType::U16 => self.parent.reader.read_u16::<E>()? as usize,
+            ScalarType::I32 => self.parent.reader.read_i32::<E>()? as usize,
+            ScalarType::U32 => self.parent.reader.read_u32::<E>()? as usize,
+            ScalarType::F32 => self.parent.reader.read_f32::<E>()? as usize,
+            ScalarType::F64 => self.parent.reader.read_f64::<E>()? as usize,
         };
 
         visitor.visit_seq(BinarySeqAccess {
-            reader: self.reader,
+            reader: &mut self.parent.reader,
             remaining: count,
-            data_type: self.data_type,
+            data_type: *data_type,
             _endian: PhantomData::<E>,
         })
     }
 
     serde::forward_to_deserialize_any! {
-        bool i8 u8 i16 u16 i32 u32 f32 f64 i128 i64 u128 u64 char str string bytes byte_buf unit
-        option identifier unit_struct newtype_struct tuple tuple_struct map struct enum ignored_any
+        bool i8 u8 i16 u16 i32 u32 f32 f64 i128 i64 u128 u64 char str string
+        bytes byte_buf unit unit_struct newtype_struct tuple
+        tuple_struct map struct enum identifier ignored_any
     }
 }
 
@@ -205,17 +213,50 @@ impl<'a, 'de, R: Read, E: ByteOrder> SeqAccess<'de> for BinarySeqAccess<'a, R, E
         }
         self.remaining -= 1;
 
-        let res = match self.data_type {
-            ScalarType::I8 => seed.deserialize(self.reader.read_i8()?.into_deserializer()),
-            ScalarType::U8 => seed.deserialize(self.reader.read_u8()?.into_deserializer()),
-            ScalarType::I16 => seed.deserialize(self.reader.read_i16::<E>()?.into_deserializer()),
-            ScalarType::U16 => seed.deserialize(self.reader.read_u16::<E>()?.into_deserializer()),
-            ScalarType::I32 => seed.deserialize(self.reader.read_i32::<E>()?.into_deserializer()),
-            ScalarType::U32 => seed.deserialize(self.reader.read_u32::<E>()?.into_deserializer()),
-            ScalarType::F32 => seed.deserialize(self.reader.read_f32::<E>()?.into_deserializer()),
-            ScalarType::F64 => seed.deserialize(self.reader.read_f64::<E>()?.into_deserializer()),
-        };
+        seed.deserialize(BinaryScalarDeserializer::<_, E> {
+            reader: self.reader,
+            data_type: self.data_type,
+            _endian: PhantomData,
+        })
+        .map(Some)
+    }
+}
 
-        res.map(Some)
+struct BinaryScalarDeserializer<'a, R, E> {
+    reader: &'a mut R,
+    data_type: ScalarType,
+    _endian: PhantomData<E>,
+}
+
+impl<'a, 'de, R: Read, E: ByteOrder> Deserializer<'de> for BinaryScalarDeserializer<'a, R, E> {
+    type Error = PlyError;
+
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        match self.data_type {
+            ScalarType::I8 => visitor.visit_i8(self.reader.read_i8()?),
+            ScalarType::U8 => visitor.visit_u8(self.reader.read_u8()?),
+            ScalarType::I16 => visitor.visit_i16(self.reader.read_i16::<E>()?),
+            ScalarType::U16 => visitor.visit_u16(self.reader.read_u16::<E>()?),
+            ScalarType::I32 => visitor.visit_i32(self.reader.read_i32::<E>()?),
+            ScalarType::U32 => visitor.visit_u32(self.reader.read_u32::<E>()?),
+            ScalarType::F32 => visitor.visit_f32(self.reader.read_f32::<E>()?),
+            ScalarType::F64 => visitor.visit_f64(self.reader.read_f64::<E>()?),
+        }
+    }
+
+    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        visitor.visit_some(self)
+    }
+
+    serde::forward_to_deserialize_any! {
+        bool i8 u8 i16 u16 i32 u32 f32 f64 i128 i64 u128 u64 char str string
+        bytes byte_buf unit unit_struct newtype_struct seq tuple
+        tuple_struct map struct enum identifier ignored_any
     }
 }

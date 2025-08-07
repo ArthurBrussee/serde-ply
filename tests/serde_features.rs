@@ -130,6 +130,131 @@ end_header
 }
 
 #[test]
+fn test_optional_fields_binary() {
+    let ply_data = r#"ply
+format binary_little_endian 1.0
+element vertex 2
+property float x
+property float y
+property float z
+property uchar red
+property uchar green
+property uchar blue
+property float normal_x
+end_header
+"#;
+
+    // Create binary data: two vertices with x,y,z,r,g,b,normal_x
+    let mut binary_data = Vec::new();
+    binary_data.extend_from_slice(ply_data.as_bytes());
+
+    // First vertex: 1.0, 2.0, 3.0, 255, 128, 64, 0.707
+    binary_data.extend_from_slice(&1.0f32.to_le_bytes());
+    binary_data.extend_from_slice(&2.0f32.to_le_bytes());
+    binary_data.extend_from_slice(&3.0f32.to_le_bytes());
+    binary_data.push(255u8);
+    binary_data.push(128u8);
+    binary_data.push(64u8);
+    binary_data.extend_from_slice(&0.707f32.to_le_bytes());
+
+    // Second vertex: 4.0, 5.0, 6.0, 200, 100, 50, 0.0
+    binary_data.extend_from_slice(&4.0f32.to_le_bytes());
+    binary_data.extend_from_slice(&5.0f32.to_le_bytes());
+    binary_data.extend_from_slice(&6.0f32.to_le_bytes());
+    binary_data.push(200u8);
+    binary_data.push(100u8);
+    binary_data.push(50u8);
+    binary_data.extend_from_slice(&0.0f32.to_le_bytes());
+
+    let cursor = Cursor::new(binary_data);
+    let mut reader = BufReader::new(cursor);
+    let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
+
+    let vertices: Vec<FlexibleVertex> = serde_ply::parse_elements(&mut reader, &header).unwrap();
+
+    assert_eq!(vertices.len(), 2);
+    assert_eq!(vertices[0].normal_x, Some(0.707));
+    assert_eq!(vertices[1].normal_x, Some(0.0));
+}
+
+#[test]
+fn test_optional_list_elements() {
+    // Test that Vec<Option<T>> works properly
+    #[derive(Deserialize, Debug, PartialEq)]
+    struct VertexWithOptionalList {
+        x: f32,
+        y: f32,
+        z: f32,
+        normals: Vec<Option<f32>>,
+    }
+
+    let ply_data = r#"ply
+format ascii 1.0
+element vertex 1
+property float x
+property float y
+property float z
+property list uchar float normals
+end_header
+1.0 2.0 3.0 3 0.1 0.2 0.3
+"#;
+
+    let cursor = Cursor::new(ply_data);
+    let mut reader = BufReader::new(cursor);
+    let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
+
+    let vertices: Vec<VertexWithOptionalList> =
+        serde_ply::parse_elements(&mut reader, &header).unwrap();
+
+    assert_eq!(vertices.len(), 1);
+    assert_eq!(vertices[0].normals, vec![Some(0.1), Some(0.2), Some(0.3)]);
+}
+
+#[test]
+fn test_optional_list_elements_binary() {
+    // Test that Vec<Option<T>> works properly in binary format
+    #[derive(Deserialize, Debug, PartialEq)]
+    struct VertexWithOptionalList {
+        x: f32,
+        y: f32,
+        z: f32,
+        normals: Vec<Option<f32>>,
+    }
+
+    let ply_data = r#"ply
+format binary_little_endian 1.0
+element vertex 1
+property float x
+property float y
+property float z
+property list uchar float normals
+end_header
+"#;
+
+    let mut binary_data = Vec::new();
+    binary_data.extend_from_slice(ply_data.as_bytes());
+
+    // Add vertex data: x=1.0, y=2.0, z=3.0, count=3, normals=[0.1, 0.2, 0.3]
+    binary_data.extend_from_slice(&1.0f32.to_le_bytes());
+    binary_data.extend_from_slice(&2.0f32.to_le_bytes());
+    binary_data.extend_from_slice(&3.0f32.to_le_bytes());
+    binary_data.push(3u8); // list count
+    binary_data.extend_from_slice(&0.1f32.to_le_bytes());
+    binary_data.extend_from_slice(&0.2f32.to_le_bytes());
+    binary_data.extend_from_slice(&0.3f32.to_le_bytes());
+
+    let cursor = Cursor::new(binary_data);
+    let mut reader = BufReader::new(cursor);
+    let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
+
+    let vertices: Vec<VertexWithOptionalList> =
+        serde_ply::parse_elements(&mut reader, &header).unwrap();
+
+    assert_eq!(vertices.len(), 1);
+    assert_eq!(vertices[0].normals, vec![Some(0.1), Some(0.2), Some(0.3)]);
+}
+
+#[test]
 fn test_default_fields() {
     // Test that fields not present in PLY get default values
     #[derive(Deserialize, Debug)]

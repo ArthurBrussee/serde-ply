@@ -5,7 +5,7 @@ use serde::{
     Deserializer,
 };
 
-use crate::{ElementDef, PlyError, PropertyType};
+use crate::{ElementDef, PlyError, PropertyType, ScalarType};
 
 pub(crate) struct AsciiRowDeserializer<'e, R> {
     pub reader: R,
@@ -26,7 +26,7 @@ impl<'de, 'e: 'de, R: Read> Deserializer<'de> for &mut AsciiRowDeserializer<'e, 
         V: Visitor<'de>,
     {
         Err(PlyError::Serde(
-            "deserialize_any not supported - struct fields must have specific types".to_string(),
+            "Ply row must be a struct or map.".to_string(),
         ))
     }
 
@@ -39,7 +39,7 @@ impl<'de, 'e: 'de, R: Read> Deserializer<'de> for &mut AsciiRowDeserializer<'e, 
     where
         V: Visitor<'de>,
     {
-        visitor.visit_map(AsciiRowMapAccess {
+        visitor.visit_map(AsciiRowMap {
             parent: self,
             current_property: 0,
         })
@@ -49,7 +49,7 @@ impl<'de, 'e: 'de, R: Read> Deserializer<'de> for &mut AsciiRowDeserializer<'e, 
     where
         V: Visitor<'de>,
     {
-        visitor.visit_map(AsciiRowMapAccess {
+        visitor.visit_map(AsciiRowMap {
             parent: self,
             current_property: 0,
         })
@@ -62,51 +62,50 @@ impl<'de, 'e: 'de, R: Read> Deserializer<'de> for &mut AsciiRowDeserializer<'e, 
     }
 }
 
-struct AsciiRowMapAccess<'a, 'e, R> {
+struct AsciiRowMap<'a, 'e, R> {
     parent: &'a mut AsciiRowDeserializer<'e, R>,
     current_property: usize,
 }
 
-impl<'de, 'a, 'e, R: Read> MapAccess<'de> for AsciiRowMapAccess<'a, 'e, R> {
+impl<'de, 'a, 'e, R: Read> MapAccess<'de> for AsciiRowMap<'a, 'e, R> {
     type Error = PlyError;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where
         K: DeserializeSeed<'de>,
     {
-        let Some(prop) = self.parent.elem_def.properties.get(self.current_property) else {
+        let Some(prop) = &self.parent.elem_def.properties.get(self.current_property) else {
             return Ok(None);
         };
-
-        let result = seed
-            .deserialize(BytesDeserializer::new(prop.name.as_bytes()))
-            .map(Some);
-        result
+        seed.deserialize(BytesDeserializer::<PlyError>::new(prop.name.as_bytes()))
+            .map(Some)
     }
 
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
     where
         V: DeserializeSeed<'de>,
     {
-        let property_index = self.current_property;
+        // SAFETY: Bounds check already has happened in next_key_seed.
+        let prop = unsafe {
+            &self
+                .parent
+                .elem_def
+                .properties
+                .get_unchecked(self.current_property)
+                .property_type
+        };
         self.current_property += 1;
+
         seed.deserialize(AsciiValueDeserializer {
             parent: self.parent,
-            property_index,
+            prop,
         })
     }
 }
 
-/// ASCII sequence access for PLY lists
-struct AsciiListAccess<'a, 'e, R> {
-    parent: &'a mut AsciiRowDeserializer<'e, R>,
-    remaining: usize,
-    property_index: usize,
-}
-
 struct AsciiValueDeserializer<'a, 'e, R> {
     parent: &'a mut AsciiRowDeserializer<'e, R>,
-    property_index: usize,
+    prop: &'a PropertyType,
 }
 
 impl<'de, 'a, 'e, R: Read> Deserializer<'de> for AsciiValueDeserializer<'a, 'e, R> {
@@ -116,181 +115,115 @@ impl<'de, 'a, 'e, R: Read> Deserializer<'de> for AsciiValueDeserializer<'a, 'e, 
     where
         V: Visitor<'de>,
     {
-        let Some(property) = self.parent.elem_def.properties.get(self.property_index) else {
-            return Err(PlyError::Serde("Property index out of bounds".to_string()));
-        };
-        match &property.property_type {
+        match self.prop {
             PropertyType::Scalar { data_type } => {
-                use crate::ScalarType;
+                let token = read_ascii_token(&mut self.parent.reader)?;
                 match data_type {
-                    ScalarType::I8 => self.deserialize_i8(visitor),
-                    ScalarType::U8 => self.deserialize_u8(visitor),
-                    ScalarType::I16 => self.deserialize_i16(visitor),
-                    ScalarType::U16 => self.deserialize_u16(visitor),
-                    ScalarType::I32 => self.deserialize_i32(visitor),
-                    ScalarType::U32 => self.deserialize_u32(visitor),
-                    ScalarType::F32 => self.deserialize_f32(visitor),
-                    ScalarType::F64 => self.deserialize_f64(visitor),
+                    ScalarType::I8 => visitor.visit_i8(token.parse::<i8>()?),
+                    ScalarType::U8 => visitor.visit_u8(token.parse::<u8>()?),
+                    ScalarType::I16 => visitor.visit_i16(token.parse::<i16>()?),
+                    ScalarType::U16 => visitor.visit_u16(token.parse::<u16>()?),
+                    ScalarType::I32 => visitor.visit_i32(token.parse::<i32>()?),
+                    ScalarType::U32 => visitor.visit_u32(token.parse::<u32>()?),
+                    ScalarType::F32 => visitor.visit_f32(token.parse::<f32>()?),
+                    ScalarType::F64 => visitor.visit_f64(token.parse::<f64>()?),
                 }
             }
             PropertyType::List { .. } => self.deserialize_seq(visitor),
         }
     }
 
-    fn deserialize_i8<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        let token = self.read_ascii_token()?;
-        let value = token.parse::<i8>()?;
-        visitor.visit_i8(value)
+        // PLY properties are always present if defined in header
+        visitor.visit_some(self)
     }
 
-    fn deserialize_u8<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        let token = self.read_ascii_token()?;
-        let value = token
-            .parse::<u8>()
-            .map_err(|e| PlyError::Serde(format!("Failed to parse u8: {e}")))?;
-        visitor.visit_u8(value)
-    }
+        let PropertyType::List {
+            count_type,
+            data_type,
+        } = self.prop
+        else {
+            return Err(PlyError::Serde("Expected list property".to_string()));
+        };
 
-    fn deserialize_i16<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        let token = self.read_ascii_token()?;
-        let value = token
-            .parse::<i16>()
-            .map_err(|e| PlyError::Serde(format!("Failed to parse i16: {e}")))?;
-        visitor.visit_i16(value)
-    }
+        let count_token = read_ascii_token(&mut self.parent.reader)?;
+        let count = match count_type {
+            ScalarType::I8 => count_token.parse::<i8>()? as usize,
+            ScalarType::U8 => count_token.parse::<u8>()? as usize,
+            ScalarType::I16 => count_token.parse::<i16>()? as usize,
+            ScalarType::U16 => count_token.parse::<u16>()? as usize,
+            ScalarType::I32 => count_token.parse::<i32>()? as usize,
+            ScalarType::U32 => count_token.parse::<u32>()? as usize,
+            ScalarType::F32 => count_token.parse::<f32>()? as usize,
+            ScalarType::F64 => count_token.parse::<f64>()? as usize,
+        };
 
-    fn deserialize_u16<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        let token = self.read_ascii_token()?;
-        let value = token
-            .parse::<u16>()
-            .map_err(|e| PlyError::Serde(format!("Failed to parse u16: {e}")))?;
-        visitor.visit_u16(value)
-    }
-
-    fn deserialize_i32<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        let token = self.read_ascii_token()?;
-        let value = token
-            .parse::<i32>()
-            .map_err(|e| PlyError::Serde(format!("Failed to parse i32: {e}")))?;
-        visitor.visit_i32(value)
-    }
-
-    fn deserialize_u32<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        let token = self.read_ascii_token()?;
-        let value = token
-            .parse::<u32>()
-            .map_err(|e| PlyError::Serde(format!("Failed to parse u32: {e}")))?;
-        visitor.visit_u32(value)
-    }
-
-    fn deserialize_f32<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        let token = self.read_ascii_token()?;
-        let value = token
-            .parse::<f32>()
-            .map_err(|e| PlyError::Serde(format!("Failed to parse f32: {e}")))?;
-        visitor.visit_f32(value)
-    }
-
-    fn deserialize_f64<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        let token = self.read_ascii_token()?;
-        let value = token
-            .parse::<f64>()
-            .map_err(|e| PlyError::Serde(format!("Failed to parse f64: {e}")))?;
-        visitor.visit_f64(value)
-    }
-
-    fn deserialize_seq<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        println!("Definiely vising the list??");
-
-        // Read list count from current token
-        let count_token = self.read_ascii_token()?;
-        let count = count_token
-            .parse::<usize>()
-            .map_err(|e| PlyError::Serde(format!("Failed to parse list count: {e}")))?;
-
-        visitor.visit_seq(AsciiListAccess {
-            parent: self.parent,
+        visitor.visit_seq(AsciiSeqAccess {
+            reader: &mut self.parent.reader,
             remaining: count,
-            property_index: self.property_index,
+            data_type: *data_type,
         })
+    }
+
+    serde::forward_to_deserialize_any! {
+        bool i8 u8 i16 u16 i32 u32 i64 u64 f32 f64 char str string
+        bytes byte_buf unit unit_struct newtype_struct tuple
+        tuple_struct map struct enum identifier ignored_any
+    }
+}
+
+struct AsciiScalarDeserializer {
+    token: String,
+    data_type: ScalarType,
+}
+
+impl<'de> Deserializer<'de> for AsciiScalarDeserializer {
+    type Error = PlyError;
+
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        match self.data_type {
+            ScalarType::I8 => visitor.visit_i8(self.token.parse::<i8>()?),
+            ScalarType::U8 => visitor.visit_u8(self.token.parse::<u8>()?),
+            ScalarType::I16 => visitor.visit_i16(self.token.parse::<i16>()?),
+            ScalarType::U16 => visitor.visit_u16(self.token.parse::<u16>()?),
+            ScalarType::I32 => visitor.visit_i32(self.token.parse::<i32>()?),
+            ScalarType::U32 => visitor.visit_u32(self.token.parse::<u32>()?),
+            ScalarType::F32 => visitor.visit_f32(self.token.parse::<f32>()?),
+            ScalarType::F64 => visitor.visit_f64(self.token.parse::<f64>()?),
+        }
     }
 
     fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        // For PLY, if a property exists in the header, it has a value
-        // We don't have null/None values in PLY format, so always Some
         visitor.visit_some(self)
     }
 
     serde::forward_to_deserialize_any! {
-        bool i128 i64 u128 u64 char str string bytes byte_buf unit
-        unit_struct newtype_struct tuple tuple_struct map struct enum
-        identifier ignored_any
+        bool i8 u8 i16 u16 i32 u32 i64 u64 f32 f64 char str string
+        bytes byte_buf unit unit_struct newtype_struct seq tuple
+        tuple_struct map struct enum identifier ignored_any
     }
 }
 
-impl<'a, 'e, R: Read> AsciiValueDeserializer<'a, 'e, R> {
-    fn read_ascii_token(&mut self) -> Result<String, PlyError> {
-        let mut token = String::new();
-        let mut in_token = false;
-
-        loop {
-            let mut byte = [0u8; 1];
-            match self.parent.reader.read_exact(&mut byte) {
-                // Treat as EOF.
-                Ok(_) => {
-                    let ch = byte[0] as char;
-                    if ch.is_ascii_whitespace() {
-                        if in_token || ch == '\n' {
-                            break;
-                        }
-                    } else {
-                        in_token = true;
-                        token.push(ch);
-                    }
-                }
-                Err(e) => return Err(PlyError::Io(e)),
-            }
-        }
-
-        if !in_token {
-            return Err(PlyError::Serde("No token found".to_string()));
-        }
-
-        Ok(token)
-    }
+struct AsciiSeqAccess<'a, R> {
+    reader: &'a mut R,
+    data_type: ScalarType,
+    remaining: usize,
 }
 
-impl<'de, 'a, 'e, R: Read> SeqAccess<'de> for AsciiListAccess<'a, 'e, R> {
+impl<'a, 'de, R: Read> SeqAccess<'de> for AsciiSeqAccess<'a, R> {
     type Error = PlyError;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
@@ -302,10 +235,40 @@ impl<'de, 'a, 'e, R: Read> SeqAccess<'de> for AsciiListAccess<'a, 'e, R> {
         }
         self.remaining -= 1;
 
-        let deserializer = AsciiValueDeserializer {
-            parent: self.parent,
-            property_index: self.property_index,
-        };
-        seed.deserialize(deserializer).map(Some)
+        let token = read_ascii_token(self.reader)?;
+        seed.deserialize(AsciiScalarDeserializer {
+            token,
+            data_type: self.data_type,
+        })
+        .map(Some)
     }
+}
+
+fn read_ascii_token<R: Read>(reader: &mut R) -> Result<String, PlyError> {
+    let mut token = String::new();
+    let mut in_token = false;
+
+    loop {
+        let mut byte = [0u8; 1];
+        match reader.read_exact(&mut byte) {
+            Ok(_) => {
+                let ch = byte[0] as char;
+                if ch.is_ascii_whitespace() {
+                    if in_token || ch == '\n' {
+                        break;
+                    }
+                } else {
+                    in_token = true;
+                    token.push(ch);
+                }
+            }
+            Err(e) => return Err(PlyError::Io(e)),
+        }
+    }
+
+    if !in_token {
+        return Err(PlyError::Serde("No token found".to_string()));
+    }
+
+    Ok(token)
 }
