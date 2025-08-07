@@ -32,12 +32,12 @@ impl<W: Write> PlySerializer<W> {
         }
     }
 
-    pub fn serialize_elements<T>(&mut self, elements: &[T]) -> Result<(), PlyError>
+    pub fn serialize_element<T>(&mut self, element: &[T]) -> Result<(), PlyError>
     where
         T: Serialize,
     {
         self.write_header()?;
-        for element in elements {
+        for element in element {
             self.current_field = 0;
             element.serialize(&mut *self)?;
             if matches!(self.format, PlyFormat::Ascii) {
@@ -613,26 +613,37 @@ impl<W: Write> SerializeStructVariant for &mut PlySerializer<W> {
     }
 }
 
-pub fn elements_to_writer<W, T>(
-    writer: W,
-    header: &PlyHeader,
-    elements: &[T],
-) -> Result<(), PlyError>
+pub fn to_writer<W, T>(writer: W, header: &PlyHeader, element: &[T]) -> Result<(), PlyError>
 where
     W: Write,
     T: Serialize,
 {
     let mut serializer = PlySerializer::with_header(writer, header.clone());
-    serializer.serialize_elements(elements)
+    serializer.serialize_element(element)
 }
 
-pub fn elements_to_bytes<T>(header: &PlyHeader, elements: &[T]) -> Result<Vec<u8>, PlyError>
+pub fn to_bytes<T>(header: &PlyHeader, element: &[T]) -> Result<Vec<u8>, PlyError>
 where
     T: Serialize,
 {
     let mut buffer = Vec::new();
-    elements_to_writer(&mut buffer, header, elements)?;
+    to_writer(&mut buffer, header, element)?;
     Ok(buffer)
+}
+
+/// Serialize elements to a PLY format string
+pub fn to_string<T>(header: &PlyHeader, element: &[T]) -> Result<String, PlyError>
+where
+    T: serde::Serialize,
+{
+    if !matches!(header.format, PlyFormat::Ascii) {
+        return Err(PlyError::UnsupportedFormat(
+            "to_string only supports ASCII format - use to_bytes for binary formats".to_string(),
+        ));
+    }
+    let mut buffer = Vec::new();
+    crate::ser::to_writer(&mut buffer, header, element)?;
+    String::from_utf8(buffer).map_err(|e| PlyError::Serde(format!("UTF-8 encoding error: {e}")))
 }
 
 #[cfg(test)]

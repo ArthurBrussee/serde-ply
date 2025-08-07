@@ -71,7 +71,7 @@ end_header
         obj_info: vec![],
     };
 
-    let ply_string = serde_ply::PlyFile::to_string(&output_header, &vertices)?;
+    let ply_string = serde_ply::to_string(&output_header, &vertices)?;
     println!("Generated PLY:\n{ply_string}");
 
     Ok(())

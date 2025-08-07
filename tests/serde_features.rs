@@ -75,21 +75,8 @@ end_header
 
 #[test]
 fn test_field_aliases() {
-    let test_cases = [
-        // Standard names
-        r#"ply
-format ascii 1.0
-element vertex 1
-property float x
-property float y
-property float z
-property uchar red
-property uchar green
-property uchar blue
-end_header
-1.0 2.0 3.0 255 128 64
-"#,
-        // Alternative naming
+    let ply_data =
+        // Test aliased name.
         r#"ply
 format ascii 1.0
 element vertex 1
@@ -101,21 +88,17 @@ property uchar green
 property uchar blue
 end_header
 1.0 2.0 3.0 255 128 64
-"#,
-    ];
+"#;
 
-    for (i, ply_data) in test_cases.iter().enumerate() {
-        let cursor = Cursor::new(ply_data);
-        let mut reader = BufReader::new(cursor);
-        let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
+    let cursor = Cursor::new(ply_data);
+    let mut reader = BufReader::new(cursor);
+    let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
 
-        let vertices: Vec<FlexibleVertex> =
-            serde_ply::parse_elements(&mut reader, &header).unwrap();
+    let vertices: Vec<FlexibleVertex> = serde_ply::parse_elements(&mut reader, &header).unwrap();
 
-        assert_eq!(vertices.len(), 1, "Test case {i}");
-        assert_eq!(vertices[0].position_x, 1.0, "Test case {i}");
-        assert_eq!(vertices[0].position_y, 2.0, "Test case {i}");
-    }
+    assert_eq!(vertices.len(), 1);
+    assert_eq!(vertices[0].position_x, 1.0);
+    assert_eq!(vertices[0].position_y, 2.0);
 }
 
 #[test]

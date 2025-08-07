@@ -1,12 +1,13 @@
 use crate::{
-    de::{AsciiRowDeserializer, BinaryRowDeserializer},
+    de::{ascii::AsciiRowDeserializer, binary::BinaryRowDeserializer},
     PlyError, PlyFormat, PlyHeader,
 };
+use byteorder::{BigEndian, LittleEndian};
 use serde::Deserialize;
 use std::io::Cursor;
 
 #[derive(Debug)]
-pub(crate) struct ChunkedFileParser {
+pub(crate) struct PlyFileParser {
     pub header: PlyHeader,
     pub current_element_index: usize,
     pub rows_parsed: usize,
@@ -20,21 +21,18 @@ pub(crate) enum ParseChunk<T> {
 /// Find the position of the last byte in "end_header\n"
 fn find_header_end(buffer: &[u8]) -> Option<usize> {
     let pattern = b"end_header\n";
-
     if buffer.len() < pattern.len() {
         return None;
     }
-
     for i in 0..=(buffer.len() - pattern.len()) {
         if &buffer[i..i + pattern.len()] == pattern {
             return Some(i + pattern.len() - 1);
         }
     }
-
     None
 }
 
-impl ChunkedFileParser {
+impl PlyFileParser {
     /// Parse elements of a specific type from buffered data. This returns Ok(Vec) as long as there are elements remaining.
     /// When no more elemnts remain, this will return None.
     pub fn parse_chunk<T>(
@@ -57,12 +55,13 @@ impl ChunkedFileParser {
             // Advance to the next element.
             self.current_element_index += 1;
             self.rows_parsed = 0;
-            element_def = self.header.elements[self.current_element_index].clone();
 
             // Check if we've moved past all elements
             if self.current_element_index >= self.header.elements.len() {
                 return Ok(ParseChunk::Complete);
             }
+
+            element_def = self.header.elements[self.current_element_index].clone();
         }
 
         let mut elements = Vec::with_capacity(64);
@@ -75,21 +74,19 @@ impl ChunkedFileParser {
             // TODO: This if should hopefully be moved out of the loop automatically, but maybe
             // double check if that's the case.
             let elem = match self.header.format {
-                PlyFormat::Ascii => T::deserialize(&mut AsciiRowDeserializer::new(
-                    &mut cursor,
-                    element_def.clone(),
-                )),
-                PlyFormat::BinaryLittleEndian => T::deserialize(&mut BinaryRowDeserializer::<
-                    _,
-                    byteorder::LittleEndian,
-                >::new(
-                    &mut cursor,
-                    element_def.clone(),
-                )),
-                PlyFormat::BinaryBigEndian => {
-                    T::deserialize(&mut BinaryRowDeserializer::<_, byteorder::BigEndian>::new(
+                PlyFormat::Ascii => {
+                    T::deserialize(&mut AsciiRowDeserializer::new(&mut cursor, &element_def))
+                }
+                PlyFormat::BinaryLittleEndian => {
+                    T::deserialize(&mut BinaryRowDeserializer::<_, LittleEndian>::new(
                         &mut cursor,
-                        element_def.clone(),
+                        &element_def,
+                    ))
+                }
+                PlyFormat::BinaryBigEndian => {
+                    T::deserialize(&mut BinaryRowDeserializer::<_, BigEndian>::new(
+                        &mut cursor,
+                        &element_def,
                     ))
                 }
             };
@@ -120,7 +117,7 @@ impl ChunkedFileParser {
 #[derive(Debug)]
 enum ParseState {
     WaitingForHeader,
-    ParsingElements { parser: ChunkedFileParser },
+    ParsingElements { parser: PlyFileParser },
 }
 
 pub struct PlyFile {
@@ -159,7 +156,7 @@ impl PlyFile {
                 let mut reader = std::io::BufReader::new(cursor);
 
                 if let Ok(header) = PlyHeader::parse(&mut reader) {
-                    let file_parser = ChunkedFileParser {
+                    let file_parser = PlyFileParser {
                         header,
                         current_element_index: 0,
                         rows_parsed: 0,
@@ -232,61 +229,6 @@ impl PlyFile {
                 "Not in element parsing state".into(),
             )),
         }
-    }
-}
-
-impl PlyFile {
-    /// Serialize elements to a PLY format string
-    pub fn to_string<T>(header: &PlyHeader, elements: &[T]) -> Result<String, PlyError>
-    where
-        T: serde::Serialize,
-    {
-        if !matches!(header.format, PlyFormat::Ascii) {
-            return Err(PlyError::UnsupportedFormat(
-                "to_string only supports ASCII format - use to_bytes for binary formats"
-                    .to_string(),
-            ));
-        }
-
-        let mut buffer = Vec::new();
-        crate::ser::elements_to_writer(&mut buffer, header, elements)?;
-        String::from_utf8(buffer).map_err(|e| PlyError::Serde(format!("UTF-8 encoding error: {e}")))
-    }
-
-    /// Serialize elements to a PLY format byte vector
-    pub fn to_bytes<T>(header: &PlyHeader, elements: &[T]) -> Result<Vec<u8>, PlyError>
-    where
-        T: serde::Serialize,
-    {
-        crate::ser::elements_to_bytes(header, elements)
-    }
-
-    /// Serialize elements to a writer
-    pub fn to_writer<W, T>(writer: W, header: &PlyHeader, elements: &[T]) -> Result<(), PlyError>
-    where
-        W: std::io::Write,
-        T: serde::Serialize,
-    {
-        crate::ser::elements_to_writer(writer, header, elements)
-    }
-
-    pub fn elements_to_writer<W, T>(
-        writer: W,
-        header: &PlyHeader,
-        elements: &[T],
-    ) -> Result<(), PlyError>
-    where
-        W: std::io::Write,
-        T: serde::Serialize,
-    {
-        crate::ser::elements_to_writer(writer, header, elements)
-    }
-
-    pub fn elements_to_bytes<T>(header: &PlyHeader, elements: &[T]) -> Result<Vec<u8>, PlyError>
-    where
-        T: serde::Serialize,
-    {
-        crate::ser::elements_to_bytes(header, elements)
     }
 }
 

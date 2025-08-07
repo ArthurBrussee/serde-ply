@@ -80,7 +80,7 @@ fn test_complete_binary_ply_file() {
     };
 
     let mut buffer = Vec::new();
-    serde_ply::PlyFile::elements_to_writer(&mut buffer, &header, &vertices).unwrap();
+    serde_ply::to_writer(&mut buffer, &header, &vertices).unwrap();
 
     let result = buffer;
     assert!(!result.is_empty());
@@ -141,7 +141,7 @@ fn test_binary_round_trip() {
         obj_info: vec![],
     };
 
-    let ply_bytes = serde_ply::PlyFile::elements_to_bytes(&header, &original_vertices).unwrap();
+    let ply_bytes = serde_ply::to_bytes(&header, &original_vertices).unwrap();
 
     let cursor = Cursor::new(ply_bytes);
     let mut reader = std::io::BufReader::new(cursor);
@@ -202,7 +202,7 @@ fn test_ascii_round_trip() {
         obj_info: vec![],
     };
 
-    let ply_bytes = serde_ply::PlyFile::elements_to_bytes(&header, &original_vertices).unwrap();
+    let ply_bytes = serde_ply::to_bytes(&header, &original_vertices).unwrap();
     let ply_str = String::from_utf8(ply_bytes).unwrap();
 
     let cursor = Cursor::new(ply_str.as_bytes());
@@ -245,7 +245,7 @@ fn test_simple_ascii_output() {
         obj_info: vec![],
     };
 
-    let ply_string = serde_ply::PlyFile::to_string(&header, &vertices).unwrap();
+    let ply_string = serde_ply::to_string(&header, &vertices).unwrap();
 
     assert!(ply_string.contains("ply"));
     assert!(ply_string.contains("format ascii 1.0"));
@@ -278,6 +278,6 @@ fn test_to_string_rejects_binary_format() {
         obj_info: vec![],
     };
 
-    let result = serde_ply::PlyFile::to_string(&header, &vertices);
+    let result = serde_ply::to_string(&header, &vertices);
     assert!(result.is_err());
 }

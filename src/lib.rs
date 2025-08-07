@@ -2,6 +2,8 @@ mod de;
 mod ply_file;
 mod ser;
 
+pub use ser::*;
+
 use byteorder::{BigEndian, LittleEndian};
 pub use ply_file::PlyFile;
 
@@ -11,7 +13,8 @@ use std::str::FromStr;
 use std::{fmt, string::FromUtf8Error};
 use thiserror::Error;
 
-use crate::de::{AsciiRowDeserializer, BinaryRowDeserializer};
+use crate::de::ascii::AsciiRowDeserializer;
+use crate::de::binary::BinaryRowDeserializer;
 
 #[derive(Error, Debug)]
 pub enum PlyError {
@@ -320,31 +323,32 @@ impl PlyHeader {
     }
 }
 
-// TODO: Delete when everythign is moved to 'native' serde.
+// TODO: Delete when everything is moved to 'native' serde.
 pub fn parse_elements<T>(mut reader: impl Read, header: &PlyHeader) -> Result<Vec<T>, PlyError>
 where
     T: for<'de> serde::Deserialize<'de>,
 {
-    let element_def = &header.elements[0];
+    let element_def = header.elements[0].clone();
+    let count = element_def.row_count;
 
     match header.format {
         PlyFormat::Ascii => {
-            let mut deserializer = AsciiRowDeserializer::new(&mut reader, element_def.clone());
-            (0..element_def.row_count)
+            let mut deserializer = AsciiRowDeserializer::new(&mut reader, &element_def);
+            (0..count)
                 .map(|_| T::deserialize(&mut deserializer))
                 .collect()
         }
         PlyFormat::BinaryLittleEndian => {
             let mut deserializer =
-                BinaryRowDeserializer::<_, LittleEndian>::new(&mut reader, element_def.clone());
-            (0..element_def.row_count)
+                BinaryRowDeserializer::<_, LittleEndian>::new(&mut reader, &element_def);
+            (0..count)
                 .map(|_| T::deserialize(&mut deserializer))
                 .collect()
         }
         PlyFormat::BinaryBigEndian => {
             let mut deserializer =
-                BinaryRowDeserializer::<_, BigEndian>::new(&mut reader, element_def.clone());
-            (0..element_def.row_count)
+                BinaryRowDeserializer::<_, BigEndian>::new(&mut reader, &element_def);
+            (0..count)
                 .map(|_| T::deserialize(&mut deserializer))
                 .collect()
         }
