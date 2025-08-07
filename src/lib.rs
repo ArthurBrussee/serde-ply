@@ -42,19 +42,28 @@ pub enum PlyError {
     #[error("Missing required element: {0}")]
     MissingElement(String),
 
-    #[error("Serde error: {0}")]
-    Serde(String),
+    #[error("Row deserialization requires struct or map")]
+    RowMustBeStructOrMap,
+
+    #[error("Property type mismatch: expected list but found scalar")]
+    ExpectedListProperty,
+
+    #[error("Failed to read ASCII token")]
+    NoTokenFound,
+
+    #[error("UTF-8 encoding error: {0}")]
+    Utf8Encoding(String),
 }
 
 impl serde::de::Error for PlyError {
     fn custom<T: fmt::Display>(msg: T) -> Self {
-        PlyError::Serde(msg.to_string())
+        PlyError::Utf8Encoding(msg.to_string())
     }
 }
 
 impl serde::ser::Error for PlyError {
     fn custom<T: fmt::Display>(msg: T) -> Self {
-        PlyError::Serde(msg.to_string())
+        PlyError::Utf8Encoding(msg.to_string())
     }
 }
 

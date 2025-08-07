@@ -25,9 +25,7 @@ impl<'de, 'e: 'de, R: Read> Deserializer<'de> for &mut AsciiRowDeserializer<'e, 
     where
         V: Visitor<'de>,
     {
-        Err(PlyError::Serde(
-            "Ply row must be a struct or map.".to_string(),
-        ))
+        Err(PlyError::RowMustBeStructOrMap)
     }
 
     fn deserialize_struct<V>(
@@ -150,7 +148,7 @@ impl<'de, 'a, 'e, R: Read> Deserializer<'de> for AsciiValueDeserializer<'a, 'e, 
             data_type,
         } = self.prop
         else {
-            return Err(PlyError::Serde("Expected list property".to_string()));
+            return Err(PlyError::ExpectedListProperty);
         };
 
         let count_token = read_ascii_token(&mut self.parent.reader)?;
@@ -267,7 +265,7 @@ fn read_ascii_token<R: Read>(reader: &mut R) -> Result<String, PlyError> {
     }
 
     if !in_token {
-        return Err(PlyError::Serde("No token found".to_string()));
+        return Err(PlyError::NoTokenFound);
     }
 
     Ok(token)

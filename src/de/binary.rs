@@ -34,9 +34,7 @@ impl<'de, 'e: 'de, R: Read, E: ByteOrder> Deserializer<'de>
     where
         V: Visitor<'de>,
     {
-        Err(PlyError::Serde(
-            "Ply row must be a struct or map.".to_string(),
-        ))
+        Err(PlyError::RowMustBeStructOrMap)
     }
 
     fn deserialize_struct<V>(
@@ -164,7 +162,7 @@ impl<'de, 'a, 'e, R: Read, E: ByteOrder> Deserializer<'de>
             data_type,
         } = self.prop
         else {
-            return Err(PlyError::Serde("Expected list property".to_string()));
+            return Err(PlyError::ExpectedListProperty);
         };
 
         let count = match count_type {

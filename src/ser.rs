@@ -643,7 +643,7 @@ where
     }
     let mut buffer = Vec::new();
     crate::ser::to_writer(&mut buffer, header, element)?;
-    String::from_utf8(buffer).map_err(|e| PlyError::Serde(format!("UTF-8 encoding error: {e}")))
+    String::from_utf8(buffer).map_err(|e| PlyError::Utf8Encoding(e.to_string()))
 }
 
 #[cfg(test)]
