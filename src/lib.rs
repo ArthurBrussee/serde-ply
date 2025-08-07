@@ -321,10 +321,7 @@ impl PlyHeader {
 }
 
 // TODO: Delete when everythign is moved to 'native' serde.
-pub fn parse_elements<T>(
-    mut reader: impl Read,
-    header: &PlyHeader,
-) -> impl Iterator<Item = Result<T, PlyError>>
+pub fn parse_elements<T>(mut reader: impl Read, header: &PlyHeader) -> Result<Vec<T>, PlyError>
 where
     T: for<'de> serde::Deserialize<'de>,
 {
@@ -333,17 +330,23 @@ where
     match header.format {
         PlyFormat::Ascii => {
             let mut deserializer = AsciiRowDeserializer::new(&mut reader, element_def.clone());
-            (0..element_def.row_count).map(|_| T::deserialize(&mut deserializer))
+            (0..element_def.row_count)
+                .map(|_| T::deserialize(&mut deserializer))
+                .collect()
         }
         PlyFormat::BinaryLittleEndian => {
             let mut deserializer =
                 BinaryRowDeserializer::<_, LittleEndian>::new(&mut reader, element_def.clone());
-            (0..element_def.row_count).map(|_| T::deserialize(&mut deserializer))
+            (0..element_def.row_count)
+                .map(|_| T::deserialize(&mut deserializer))
+                .collect()
         }
         PlyFormat::BinaryBigEndian => {
             let mut deserializer =
                 BinaryRowDeserializer::<_, BigEndian>::new(&mut reader, element_def.clone());
-            (0..element_def.row_count).map(|_| T::deserialize(&mut deserializer))
+            (0..element_def.row_count)
+                .map(|_| T::deserialize(&mut deserializer))
+                .collect()
         }
     }
 }
