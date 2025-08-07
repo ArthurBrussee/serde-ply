@@ -13,8 +13,8 @@ use std::str::FromStr;
 use std::{fmt, string::FromUtf8Error};
 use thiserror::Error;
 
-use crate::de::ascii::AsciiRowDeserializer;
-use crate::de::binary::BinaryRowDeserializer;
+use crate::de::val_reader::{AsciiValReader, BinValReader};
+use crate::de::RowDeserializer;
 
 #[derive(Error, Debug)]
 pub enum PlyError {
@@ -342,21 +342,24 @@ where
 
     match header.format {
         PlyFormat::Ascii => {
-            let mut deserializer = AsciiRowDeserializer::new(&mut reader, &element_def);
+            let mut deserializer =
+                RowDeserializer::new(AsciiValReader::new(&mut reader), &element_def);
             (0..count)
                 .map(|_| T::deserialize(&mut deserializer))
                 .collect()
         }
         PlyFormat::BinaryLittleEndian => {
-            let mut deserializer =
-                BinaryRowDeserializer::<_, LittleEndian>::new(&mut reader, &element_def);
+            let mut deserializer = RowDeserializer::new(
+                BinValReader::<_, LittleEndian>::new(&mut reader),
+                &element_def,
+            );
             (0..count)
                 .map(|_| T::deserialize(&mut deserializer))
                 .collect()
         }
         PlyFormat::BinaryBigEndian => {
             let mut deserializer =
-                BinaryRowDeserializer::<_, BigEndian>::new(&mut reader, &element_def);
+                RowDeserializer::new(BinValReader::<_, BigEndian>::new(&mut reader), &element_def);
             (0..count)
                 .map(|_| T::deserialize(&mut deserializer))
                 .collect()

@@ -31,5 +31,5 @@ name = "core_performance"
 harness = false
 
 [[bench]]
-name = "gaussian_splat"
+name = "splat"
 harness = false

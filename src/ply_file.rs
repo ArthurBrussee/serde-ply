@@ -1,5 +1,8 @@
 use crate::{
-    de::{ascii::AsciiRowDeserializer, binary::BinaryRowDeserializer},
+    de::{
+        val_reader::{AsciiValReader, BinValReader},
+        RowDeserializer,
+    },
     PlyError, PlyFormat, PlyHeader,
 };
 use byteorder::{BigEndian, LittleEndian};
@@ -74,21 +77,18 @@ impl PlyFileParser {
             // TODO: This if should hopefully be moved out of the loop automatically, but maybe
             // double check if that's the case.
             let elem = match self.header.format {
-                PlyFormat::Ascii => {
-                    T::deserialize(&mut AsciiRowDeserializer::new(&mut cursor, &element_def))
-                }
-                PlyFormat::BinaryLittleEndian => {
-                    T::deserialize(&mut BinaryRowDeserializer::<_, LittleEndian>::new(
-                        &mut cursor,
-                        &element_def,
-                    ))
-                }
-                PlyFormat::BinaryBigEndian => {
-                    T::deserialize(&mut BinaryRowDeserializer::<_, BigEndian>::new(
-                        &mut cursor,
-                        &element_def,
-                    ))
-                }
+                PlyFormat::Ascii => T::deserialize(&mut RowDeserializer::new(
+                    AsciiValReader::new(&mut cursor),
+                    &element_def,
+                )),
+                PlyFormat::BinaryLittleEndian => T::deserialize(&mut RowDeserializer::new(
+                    BinValReader::<_, LittleEndian>::new(&mut cursor),
+                    &element_def,
+                )),
+                PlyFormat::BinaryBigEndian => T::deserialize(&mut RowDeserializer::new(
+                    BinValReader::<_, BigEndian>::new(&mut cursor),
+                    &element_def,
+                )),
             };
 
             match elem {
