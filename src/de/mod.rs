@@ -10,7 +10,9 @@ use serde::Deserialize;
 
 use crate::PlyError;
 
-// TODO: Make compatible with :Read?
+// TODO: Make this compatible with :Read instead of BufRead?
+// This is just for a read_line when parsing the header but really
+// don't need BufRead otherwise.
 pub fn from_reader<'a, T>(reader: impl BufRead) -> Result<T, PlyError>
 where
     T: Deserialize<'a>,

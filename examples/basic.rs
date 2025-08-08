@@ -66,30 +66,5 @@ end_header
         faces.len()
     );
 
-    // Write PLY file
-    use serde_ply::{ElementDef, PlyFormat, PlyHeader, PlyProperty, ScalarType};
-
-    let output_header = PlyHeader {
-        format: PlyFormat::Ascii,
-        version: "1.0".to_string(),
-        elements: vec![ElementDef {
-            name: "vertex".to_string(),
-            row_count: vertices.len(),
-            properties: vec![
-                PlyProperty::scalar("x".to_string(), ScalarType::F32),
-                PlyProperty::scalar("y".to_string(), ScalarType::F32),
-                PlyProperty::scalar("z".to_string(), ScalarType::F32),
-                PlyProperty::scalar("red".to_string(), ScalarType::U8),
-                PlyProperty::scalar("green".to_string(), ScalarType::U8),
-                PlyProperty::scalar("blue".to_string(), ScalarType::U8),
-            ],
-        }],
-        comments: vec![],
-        obj_info: vec![],
-    };
-
-    let ply_string = serde_ply::to_string(&output_header, &vertices)?;
-    println!("Serialized PLY:\n {ply_string}");
-
     Ok(())
 }

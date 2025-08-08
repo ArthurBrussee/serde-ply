@@ -6,7 +6,7 @@ mod ser;
 pub use error::PlyError;
 
 pub use de::{from_reader, from_str};
-pub use ser::*;
+pub use ser::{to_bytes, to_writer};
 
 use byteorder::{BigEndian, LittleEndian};
 pub use ply_file::ChunkPlyFile;
@@ -15,13 +15,13 @@ pub use de::PlyFileDeserializer;
 
 use std::io::{BufRead, Read};
 
-use std::fmt;
+use std::fmt::{self, Display};
 use std::str::FromStr;
 
 use crate::de::val_reader::{AsciiValReader, BinValReader};
 use crate::de::RowDeserializer;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PlyFormat {
     Ascii,
     BinaryLittleEndian,
@@ -85,6 +85,21 @@ impl FromStr for ScalarType {
     }
 }
 
+impl Display for ScalarType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ScalarType::I8 => write!(f, "int8"),
+            ScalarType::U8 => write!(f, "uint8"),
+            ScalarType::I16 => write!(f, "int16"),
+            ScalarType::U16 => write!(f, "uint16"),
+            ScalarType::I32 => write!(f, "int32"),
+            ScalarType::U32 => write!(f, "uint32"),
+            ScalarType::F32 => write!(f, "float32"),
+            ScalarType::F64 => write!(f, "float64"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 enum PropertyType {
     /// A scalar property with a single value
@@ -95,6 +110,7 @@ enum PropertyType {
         data_type: ScalarType,
     },
 }
+
 #[derive(Debug, Clone)]
 pub struct PlyProperty {
     name: String,
@@ -141,7 +157,6 @@ pub struct PlyHeader {
 impl PlyHeader {
     pub(crate) fn parse<R: BufRead>(mut reader: R) -> Result<Self, PlyError> {
         let mut line = String::new();
-
         reader.read_line(&mut line)?;
         if line.trim() != "ply" {
             return Err(PlyError::InvalidHeader(
@@ -157,19 +172,17 @@ impl PlyHeader {
         let mut current_element: Option<ElementDef> = None;
 
         loop {
-            line.clear();
+            let mut line = String::new();
             let bytes_read = reader.read_line(&mut line)?;
             if bytes_read == 0 {
                 return Err(PlyError::InvalidHeader(
                     "Unexpected end of file".to_string(),
                 ));
             }
-
             let line_content = line.trim();
             if line_content.is_empty() {
                 continue;
             }
-
             if line_content == "end_header" {
                 break;
             }
@@ -178,7 +191,6 @@ impl PlyHeader {
             if parts.is_empty() {
                 continue;
             }
-
             match parts[0] {
                 "format" => {
                     if parts.len() < 3 {
@@ -260,14 +272,11 @@ impl PlyHeader {
                 }
             }
         }
-
         if let Some(element) = current_element {
             elements.push(element);
         }
-
         let format = format
             .ok_or_else(|| PlyError::InvalidHeader("Missing format specification".to_string()))?;
-
         Ok(PlyHeader {
             format,
             version,

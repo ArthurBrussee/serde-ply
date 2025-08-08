@@ -28,7 +28,7 @@ impl<'de, E: ScalarReader> Deserializer<'de> for &mut RowDeserializer<E> {
     where
         V: Visitor<'de>,
     {
-        Err(PlyError::RowMustBeStructOrMap)
+        Err(PlyError::InvalidStructure)
     }
 
     fn deserialize_struct<V>(
@@ -79,6 +79,7 @@ impl<'de, 'a, E: ScalarReader> MapAccess<'de> for RowMapAccess<'a, E> {
         K: DeserializeSeed<'de>,
     {
         let Some(prop) = &self.parent.elem_def.properties.get(self.current_property) else {
+            self.parent.val_reader.read_row_end()?;
             return Ok(None);
         };
         seed.deserialize(BytesDeserializer::<PlyError>::new(prop.name.as_bytes()))
@@ -195,8 +196,10 @@ impl<'a, 'de, E: ScalarReader> SeqAccess<'de> for ListSeqAccess<'a, E> {
         T: DeserializeSeed<'de>,
     {
         if self.remaining == 0 {
+            println!("Stop de list");
             return Ok(None);
         }
+        println!("Do a scalar of the list {}", self.remaining);
         self.remaining -= 1;
 
         seed.deserialize(ScalarDeserializer::<E> {

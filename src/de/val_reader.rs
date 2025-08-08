@@ -38,6 +38,8 @@ pub trait ScalarReader {
     fn read_u32(&mut self) -> Result<u32, PlyError>;
     fn read_f32(&mut self) -> Result<f32, PlyError>;
     fn read_f64(&mut self) -> Result<f64, PlyError>;
+
+    fn read_row_end(&mut self) -> Result<(), PlyError>;
 }
 
 impl<R: Read, E: ByteOrder> ScalarReader for BinValReader<R, E> {
@@ -71,6 +73,10 @@ impl<R: Read, E: ByteOrder> ScalarReader for BinValReader<R, E> {
 
     fn read_f64(&mut self) -> Result<f64, PlyError> {
         Ok(self.reader.read_f64::<E>()?)
+    }
+
+    fn read_row_end(&mut self) -> Result<(), PlyError> {
+        Ok(())
     }
 }
 
@@ -106,11 +112,14 @@ impl<R: Read> ScalarReader for AsciiValReader<R> {
     fn read_f64(&mut self) -> Result<f64, PlyError> {
         Ok(read_ascii_token(&mut self.reader)?.parse::<f64>()?)
     }
+
+    fn read_row_end(&mut self) -> Result<(), PlyError> {
+        read_to_end_of_line(&mut self.reader)
+    }
 }
 
 fn read_ascii_token<R: Read>(reader: &mut R) -> Result<String, PlyError> {
     let mut token = String::new();
-    let mut in_token = false;
 
     loop {
         let mut byte = [0u8; 1];
@@ -118,11 +127,10 @@ fn read_ascii_token<R: Read>(reader: &mut R) -> Result<String, PlyError> {
             Ok(_) => {
                 let ch = byte[0] as char;
                 if ch.is_ascii_whitespace() {
-                    if in_token || ch == '\n' {
+                    if !token.is_empty() {
                         break;
                     }
                 } else {
-                    in_token = true;
                     token.push(ch);
                 }
             }
@@ -130,9 +138,28 @@ fn read_ascii_token<R: Read>(reader: &mut R) -> Result<String, PlyError> {
         }
     }
 
-    if !in_token {
-        return Err(PlyError::NoTokenFound);
+    if token.is_empty() {
+        return Err(PlyError::NoPropertyFound);
     }
 
     Ok(token)
+}
+
+fn read_to_end_of_line<R: Read>(reader: &mut R) -> Result<(), PlyError> {
+    loop {
+        let mut byte = [0u8; 1];
+        match reader.read_exact(&mut byte) {
+            Ok(_) => {
+                let ch = byte[0] as char;
+                if ch.is_ascii_whitespace() {
+                    if ch == '\n' {
+                        return Ok(());
+                    }
+                } else {
+                    return Err(PlyError::TooManyProperties);
+                }
+            }
+            Err(e) => return Err(PlyError::Io(e)),
+        }
+    }
 }
