@@ -36,7 +36,6 @@ pub trait ValReader {
     fn read_u16(&mut self) -> Result<u16, PlyError>;
     fn read_i32(&mut self) -> Result<i32, PlyError>;
     fn read_u32(&mut self) -> Result<u32, PlyError>;
-
     fn read_f32(&mut self) -> Result<f32, PlyError>;
     fn read_f64(&mut self) -> Result<f64, PlyError>;
 }

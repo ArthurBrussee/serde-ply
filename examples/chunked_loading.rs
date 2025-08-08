@@ -37,18 +37,15 @@ end_header
 "#;
 
     let mut ply_file = PlyFile::new();
+    let mut total = 0;
 
     // Feed in small chunks
     for chunk in ply_data.as_bytes().chunks(15) {
         ply_file.buffer_mut().extend_from_slice(chunk);
-    }
 
-    // Parse all vertices
-    let mut total = 0;
-
-    while let Some(chunk) = ply_file.next_chunk::<Vertex>()? {
+        // Parse all vertices
+        let chunk = ply_file.next_chunk::<Vertex>()?;
         total += chunk.len();
-        println!("Got {} vertices, total: {}", chunk.len(), total);
     }
 
     println!("Completed: {total} vertices\n");
@@ -89,19 +86,14 @@ end_header
 
     println!("Header parsed, processing vertices...");
 
-    let mut total = 0;
+    let total = 0;
 
     for chunk in chunk_iter {
         // Feed in some data.
         ply_file.buffer_mut().extend_from_slice(chunk);
-
         // Parse new incoming data.
-        if let Some(chunk) = ply_file.next_chunk::<Vertex>()? {
-            total += chunk.len();
-            println!("Processed {} vertices (total: {})", chunk.len(), total);
-        } else {
-            break;
-        }
+        let chunk = ply_file.next_chunk::<Vertex>()?;
+        println!("Processed {} vertices (total: {})", chunk.len(), total);
     }
 
     println!("Completed: {total} vertices total\n");
@@ -138,10 +130,9 @@ fn demonstrate_binary_chunked() -> Result<(), PlyError> {
     for chunk in chunk_iter {
         ply_file.buffer_mut().extend_from_slice(chunk);
 
-        while let Some(chunk) = ply_file.next_chunk::<Vertex>()? {
-            for vertex in chunk {
-                println!("Binary vertex: {vertex:?}");
-            }
+        let chunk = ply_file.next_chunk::<Vertex>()?;
+        for vertex in chunk {
+            println!("Binary vertex: {vertex:?}");
         }
     }
 

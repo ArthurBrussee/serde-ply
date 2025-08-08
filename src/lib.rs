@@ -39,8 +39,8 @@ pub enum PlyError {
     #[error("Property type mismatch: expected {expected}, found {found}")]
     TypeMismatch { expected: String, found: String },
 
-    #[error("Missing required element: {0}")]
-    MissingElement(String),
+    #[error("Missing required element.")]
+    MissingElement,
 
     #[error("Row deserialization requires struct or map")]
     RowMustBeStructOrMap,

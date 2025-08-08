@@ -170,7 +170,7 @@ fn benchmark_chunked_parsing(c: &mut Criterion) {
                 .extend_from_slice(black_box(&binary_data));
 
             // Parse all vertices in one call
-            let _vertices = ply_file.next_chunk::<Vertex>().unwrap().unwrap();
+            let _vertices = ply_file.next_chunk::<Vertex>().unwrap();
         });
     });
 
