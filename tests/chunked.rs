@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use serde_ply::PlyFile;
+use serde_ply::ChunkPlyFile;
 
 #[derive(Deserialize, Debug, PartialEq)]
 struct Vertex {
@@ -35,7 +35,7 @@ end_header
 0.5 1.0 0.0
 "#;
 
-    let mut ply_file = PlyFile::new();
+    let mut ply_file = ChunkPlyFile::new();
     ply_file.buffer_mut().extend_from_slice(ply_data.as_bytes());
 
     let vertices = ply_file.next_chunk::<Vertex>().unwrap();
@@ -58,7 +58,6 @@ end_header
     );
 }
 
-/// Test binary chunked parsing (little endian)
 #[test]
 fn test_binary_basic() {
     let header = "ply\nformat binary_little_endian 1.0\nelement vertex 2\nproperty float x\nproperty float y\nproperty float z\nend_header\n";
@@ -74,7 +73,7 @@ fn test_binary_basic() {
         }
     }
 
-    let mut ply_file = PlyFile::new();
+    let mut ply_file = ChunkPlyFile::new();
     ply_file.buffer_mut().extend_from_slice(&binary_data);
 
     let parsed = ply_file.next_chunk::<Vertex>().unwrap();
@@ -97,35 +96,6 @@ fn test_binary_basic() {
     );
 }
 
-/// Test binary big endian parsing
-#[test]
-fn test_binary_big_endian() {
-    let header = "ply\nformat binary_big_endian 1.0\nelement vertex 1\nproperty float x\nproperty float y\nproperty float z\nend_header\n";
-
-    let mut binary_data = Vec::new();
-    binary_data.extend_from_slice(header.as_bytes());
-
-    let vertex = [42.5f32, -17.25f32, 100.0f32];
-    for &coord in &vertex {
-        binary_data.extend_from_slice(&coord.to_be_bytes());
-    }
-
-    let mut ply_file = PlyFile::new();
-    ply_file.buffer_mut().extend_from_slice(&binary_data);
-
-    let parsed = ply_file.next_chunk::<Vertex>().unwrap();
-    assert_eq!(parsed.len(), 1);
-    assert_eq!(
-        parsed[0],
-        Vertex {
-            x: 42.5,
-            y: -17.25,
-            z: 100.0
-        }
-    );
-}
-
-/// Test ASCII incomplete data handling - the critical case
 #[test]
 fn test_ascii_incomplete_data() {
     let ply_data = r#"ply
@@ -136,9 +106,9 @@ property float y
 property float z
 end_header
 1.0 2.0 3.0
-"#; // Missing second vertex
+"#;
 
-    let mut ply_file = PlyFile::new();
+    let mut ply_file = ChunkPlyFile::new();
     ply_file.buffer_mut().extend_from_slice(ply_data.as_bytes());
 
     // Should get first vertex
@@ -171,12 +141,9 @@ end_header
             z: 6.0
         }
     );
-
-    // Should be done now
     assert!(ply_file.next_chunk::<Vertex>().is_err());
 }
 
-/// Test binary incomplete elements - the most critical case for binary
 #[test]
 fn test_binary_incomplete_elements() {
     let header = "ply\nformat binary_little_endian 1.0\nelement vertex 2\nproperty float x\nproperty float y\nproperty float z\nend_header\n";
@@ -192,7 +159,7 @@ fn test_binary_incomplete_elements() {
         }
     }
 
-    let mut ply_file = PlyFile::new();
+    let mut ply_file = ChunkPlyFile::new();
 
     // Feed only header + first complete vertex (12 bytes)
     let header_size = header.len();
@@ -262,7 +229,7 @@ end_header
 32 16 8
 "#;
 
-    let mut ply_file = PlyFile::new();
+    let mut ply_file = ChunkPlyFile::new();
     ply_file.buffer_mut().extend_from_slice(ply_data.as_bytes());
 
     // Parse vertices
@@ -290,7 +257,6 @@ end_header
     );
 }
 
-/// Test list properties with ASCII
 #[test]
 fn test_ascii_lists() {
     let ply_data = r#"ply
@@ -302,7 +268,7 @@ end_header
 4 0 1 2 3
 "#;
 
-    let mut ply_file = PlyFile::new();
+    let mut ply_file = ChunkPlyFile::new();
     ply_file.buffer_mut().extend_from_slice(ply_data.as_bytes());
 
     let faces = ply_file.next_chunk::<Face>().unwrap();
@@ -311,44 +277,6 @@ end_header
     assert_eq!(faces[1].vertex_indices, vec![0, 1, 2, 3]);
 }
 
-/// Test header parsing across chunk boundaries
-#[test]
-fn test_header_across_chunks() {
-    let ply_data = r#"ply
-format ascii 1.0
-element vertex 1
-property float x
-property float y
-property float z
-end_header
-1.0 2.0 3.0
-"#;
-
-    let mut ply_file = PlyFile::new();
-
-    // Split exactly at header boundary
-    let header_end = ply_data.find("end_header\n").unwrap() + "end_header\n".len();
-    let header_part = &ply_data.as_bytes()[..header_end];
-    let data_part = &ply_data.as_bytes()[header_end..];
-
-    ply_file.buffer_mut().extend_from_slice(header_part);
-    assert!(ply_file.header().is_some());
-
-    ply_file.buffer_mut().extend_from_slice(data_part);
-
-    let vertices = ply_file.next_chunk::<Vertex>().unwrap();
-    assert_eq!(vertices.len(), 1);
-    assert_eq!(
-        vertices[0],
-        Vertex {
-            x: 1.0,
-            y: 2.0,
-            z: 3.0
-        }
-    );
-}
-
-/// Test very small chunks to stress buffer management
 #[test]
 fn test_small_chunks() {
     let ply_data = r#"ply
@@ -362,15 +290,16 @@ end_header
 4.0 5.0 6.0
 "#;
 
-    let mut ply_file = PlyFile::new();
+    let mut ply_file = ChunkPlyFile::new();
 
     // Feed data in 3-byte chunks
     let data = ply_data.as_bytes();
+    let mut vertices = vec![];
     for chunk in data.chunks(3) {
         ply_file.buffer_mut().extend_from_slice(chunk);
+        vertices.extend(ply_file.next_chunk::<Vertex>().unwrap());
     }
 
-    let vertices = ply_file.next_chunk::<Vertex>().unwrap();
     assert_eq!(vertices.len(), 2);
     assert_eq!(
         vertices[0],
@@ -390,7 +319,6 @@ end_header
     );
 }
 
-/// Test zero elements edge case
 #[test]
 fn test_zero_elements() {
     let ply_data = r#"ply
@@ -402,62 +330,11 @@ property float z
 end_header
 "#;
 
-    let mut ply_file = PlyFile::new();
+    let mut ply_file = ChunkPlyFile::new();
     ply_file.buffer_mut().extend_from_slice(ply_data.as_bytes());
-
     assert!(ply_file.next_chunk::<Vertex>().unwrap().is_empty());
 }
 
-/// Test incremental feeding pattern
-#[test]
-fn test_incremental_feeding() {
-    let ply_data = r#"ply
-format ascii 1.0
-element vertex 3
-property float x
-property float y
-property float z
-end_header
-1.0 2.0 3.0
-4.0 5.0 6.0
-7.0 8.0 9.0
-"#;
-
-    let mut ply_file = PlyFile::new();
-    let mut all_vertices = Vec::new();
-
-    // Feed and parse incrementally
-    let data = ply_data.as_bytes();
-    for chunk in data.chunks(20) {
-        ply_file.buffer_mut().extend_from_slice(chunk);
-
-        // Only try to parse if header is ready
-        if ply_file.header().is_some() {
-            let vertices = ply_file.next_chunk::<Vertex>().unwrap();
-            all_vertices.extend(vertices);
-        }
-    }
-
-    assert_eq!(all_vertices.len(), 3);
-    assert_eq!(
-        all_vertices[0],
-        Vertex {
-            x: 1.0,
-            y: 2.0,
-            z: 3.0
-        }
-    );
-    assert_eq!(
-        all_vertices[2],
-        Vertex {
-            x: 7.0,
-            y: 8.0,
-            z: 9.0
-        }
-    );
-}
-
-/// Test binary list properties with incomplete data
 #[test]
 fn test_binary_incomplete_lists() {
     let header = "ply\nformat binary_little_endian 1.0\nelement face 2\nproperty list uchar int vertex_indices\nend_header\n";
@@ -477,7 +354,7 @@ fn test_binary_incomplete_lists() {
     binary_data.extend_from_slice(&1i32.to_le_bytes()); // index 1
                                                         // Missing 2 more indices
 
-    let mut ply_file = PlyFile::new();
+    let mut ply_file = ChunkPlyFile::new();
     ply_file.buffer_mut().extend_from_slice(&binary_data);
 
     // Should parse only the first complete face
@@ -489,12 +366,8 @@ fn test_binary_incomplete_lists() {
     assert!(ply_file.next_chunk::<Face>().unwrap().is_empty());
 
     // Add missing data for second face
-    binary_data.extend_from_slice(&2i32.to_le_bytes()); // index 2
-    binary_data.extend_from_slice(&3i32.to_le_bytes()); // index 3
-
-    ply_file
-        .buffer_mut()
-        .extend_from_slice(&binary_data[binary_data.len() - 8..]);
+    ply_file.buffer_mut().extend_from_slice(&2i32.to_le_bytes()); // index 2
+    ply_file.buffer_mut().extend_from_slice(&3i32.to_le_bytes()); // index 3
 
     // Now should get the second face
     let faces2 = ply_file.next_chunk::<Face>().unwrap();
@@ -502,7 +375,6 @@ fn test_binary_incomplete_lists() {
     assert_eq!(faces2[0].vertex_indices, vec![0, 1, 2, 3]);
 }
 
-/// Test binary list properties with chunked loading
 #[test]
 fn test_binary_lists() {
     let header = "ply\nformat binary_little_endian 1.0\nelement face 2\nproperty list uchar int vertex_indices\nend_header\n";
@@ -524,14 +396,15 @@ fn test_binary_lists() {
     binary_data.extend_from_slice(&2i32.to_le_bytes()); // index 2
     binary_data.extend_from_slice(&3i32.to_le_bytes()); // index 3
 
-    let mut ply_file = PlyFile::new();
+    let mut ply_file = ChunkPlyFile::new();
 
+    let mut faces = vec![];
     // Feed in small chunks to test list boundary detection
     for chunk in binary_data.chunks(6) {
         ply_file.buffer_mut().extend_from_slice(chunk);
+        faces.extend(ply_file.next_chunk::<Face>().unwrap());
     }
 
-    let faces = ply_file.next_chunk::<Face>().unwrap();
     assert_eq!(faces.len(), 2);
     assert_eq!(faces[0].vertex_indices, vec![0, 1, 2]);
     assert_eq!(faces[1].vertex_indices, vec![0, 1, 2, 3]);

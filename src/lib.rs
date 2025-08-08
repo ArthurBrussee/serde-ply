@@ -1,71 +1,25 @@
 mod de;
+mod error;
 mod ply_file;
 mod ser;
 
+pub use error::PlyError;
+
+pub use de::{from_reader, from_str};
 pub use ser::*;
 
 use byteorder::{BigEndian, LittleEndian};
-pub use ply_file::PlyFile;
+pub use ply_file::ChunkPlyFile;
+
+pub use de::PlyFileDeserializer;
 
 use std::io::{BufRead, Read};
-use std::num::{ParseFloatError, ParseIntError};
+
+use std::fmt;
 use std::str::FromStr;
-use std::{fmt, string::FromUtf8Error};
-use thiserror::Error;
 
 use crate::de::val_reader::{AsciiValReader, BinValReader};
 use crate::de::RowDeserializer;
-
-#[derive(Error, Debug)]
-pub enum PlyError {
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("Invalid ascii data: {0}")]
-    InvalidAscii(#[from] FromUtf8Error),
-
-    #[error("Invalid PLY header: {0}")]
-    InvalidHeader(String),
-
-    #[error("Unsupported PLY format: {0}")]
-    UnsupportedFormat(String),
-
-    #[error("Parse error: {0}")]
-    ParseIntError(#[from] ParseIntError),
-
-    #[error("Parse error: {0}")]
-    ParseFloatError(#[from] ParseFloatError),
-
-    #[error("Property type mismatch: expected {expected}, found {found}")]
-    TypeMismatch { expected: String, found: String },
-
-    #[error("Missing required element.")]
-    MissingElement,
-
-    #[error("Row deserialization requires struct or map")]
-    RowMustBeStructOrMap,
-
-    #[error("Property type mismatch: expected list but found scalar")]
-    ExpectedListProperty,
-
-    #[error("Failed to read ASCII token")]
-    NoTokenFound,
-
-    #[error("UTF-8 encoding error: {0}")]
-    Utf8Encoding(String),
-}
-
-impl serde::de::Error for PlyError {
-    fn custom<T: fmt::Display>(msg: T) -> Self {
-        PlyError::Utf8Encoding(msg.to_string())
-    }
-}
-
-impl serde::ser::Error for PlyError {
-    fn custom<T: fmt::Display>(msg: T) -> Self {
-        PlyError::Utf8Encoding(msg.to_string())
-    }
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PlyFormat {
@@ -185,7 +139,7 @@ pub struct PlyHeader {
 }
 
 impl PlyHeader {
-    pub fn parse<R: BufRead>(mut reader: R) -> Result<Self, PlyError> {
+    pub(crate) fn parse<R: BufRead>(mut reader: R) -> Result<Self, PlyError> {
         let mut line = String::new();
 
         reader.read_line(&mut line)?;
@@ -343,7 +297,7 @@ where
     match header.format {
         PlyFormat::Ascii => {
             let mut deserializer =
-                RowDeserializer::new(AsciiValReader::new(&mut reader), &element_def);
+                RowDeserializer::new(AsciiValReader::new(&mut reader), element_def);
             (0..count)
                 .map(|_| T::deserialize(&mut deserializer))
                 .collect()
@@ -351,7 +305,7 @@ where
         PlyFormat::BinaryLittleEndian => {
             let mut deserializer = RowDeserializer::new(
                 BinValReader::<_, LittleEndian>::new(&mut reader),
-                &element_def,
+                element_def,
             );
             (0..count)
                 .map(|_| T::deserialize(&mut deserializer))
@@ -359,7 +313,7 @@ where
         }
         PlyFormat::BinaryBigEndian => {
             let mut deserializer =
-                RowDeserializer::new(BinValReader::<_, BigEndian>::new(&mut reader), &element_def);
+                RowDeserializer::new(BinValReader::<_, BigEndian>::new(&mut reader), element_def);
             (0..count)
                 .map(|_| T::deserialize(&mut deserializer))
                 .collect()

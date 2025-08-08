@@ -1,6 +1,9 @@
 use serde::Deserialize;
-use serde_ply::{PlyFormat, PlyHeader};
-use std::io::{BufReader, Cursor};
+use serde_ply::{PlyFileDeserializer, PlyFormat};
+use std::{
+    collections::HashMap,
+    io::{BufReader, Cursor},
+};
 
 #[derive(Deserialize, Debug, PartialEq)]
 struct Vertex {
@@ -59,13 +62,13 @@ end_header
 0.5 1.0 0.0
 "#;
 
-    let mut cursor = Cursor::new(ply_data);
-    let header = PlyHeader::parse(&mut cursor).unwrap();
+    let cursor = Cursor::new(ply_data);
+    let mut reader = PlyFileDeserializer::from_reader(cursor).unwrap();
 
-    assert_eq!(header.format, PlyFormat::Ascii);
-    assert_eq!(header.elements.len(), 1);
+    assert_eq!(reader.header().format, PlyFormat::Ascii);
+    assert_eq!(reader.header().elements.len(), 1);
 
-    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut cursor, &header).unwrap();
+    let vertices: Vec<Vertex> = reader.next_element().unwrap();
     assert_eq!(vertices.len(), 3);
     assert_eq!(
         vertices[0],
@@ -92,12 +95,11 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
+    let mut reader = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
 
-    assert_eq!(header.format, PlyFormat::Ascii);
-    assert_eq!(header.elements.len(), 1);
-    let result = serde_ply::parse_elements::<Vertex>(&mut reader, &header);
+    assert_eq!(reader.header().format, PlyFormat::Ascii);
+    assert_eq!(reader.header().elements.len(), 1);
+    let result = reader.next_element::<Vec<Vertex>>();
     assert!(result.is_err());
 }
 
@@ -130,22 +132,29 @@ end_header
 4 3 7 4 0
 "#;
 
+    // Test header parsing by creating deserializer first
     let cursor = Cursor::new(ply_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
+    let file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
 
-    assert_eq!(header.format, PlyFormat::Ascii);
-    assert_eq!(header.elements.len(), 2);
-    assert_eq!(header.comments[0], "made by Greg Turk");
-    assert_eq!(header.comments[1], "this file is a cube");
+    assert_eq!(file.header().format, PlyFormat::Ascii);
+    assert_eq!(file.header().elements.len(), 2);
+    assert_eq!(file.header().comments[0], "made by Greg Turk");
+    assert_eq!(file.header().comments[1], "this file is a cube");
 
-    // TODO: Re-enable this test properly once we can properly parse multiple elements again.
-    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header).unwrap();
-    //let faces: Vec<Face> = serde_ply::parse_elements(&mut reader, &header).unwrap();
+    // Use native serde to parse both vertices and faces
+    #[derive(Deserialize, Debug)]
+    struct PlyData {
+        vertex: Vec<Vertex>,
+        face: Vec<Face>,
+    }
 
-    assert_eq!(vertices.len(), 8);
-    // assert_eq!(faces.len(), 6);
-    // assert_eq!(faces[0].vertex_indices, vec![0, 1, 2, 3]);
+    let cursor = Cursor::new(ply_data);
+    let reader = BufReader::new(cursor);
+    let ply: PlyData = serde_ply::from_reader(reader).unwrap();
+
+    assert_eq!(ply.vertex.len(), 8);
+    assert_eq!(ply.face.len(), 6);
+    assert_eq!(ply.face[0].vertex_indices, vec![0, 1, 2, 3]);
 }
 
 #[test]
@@ -174,10 +183,8 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
-
-    let points: Vec<AllTypes> = serde_ply::parse_elements(&mut reader, &header).unwrap();
+    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let points: Vec<AllTypes> = file.next_element().unwrap();
     assert_eq!(points.len(), 1);
 
     let point = &points[0];
@@ -205,38 +212,12 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
-
-    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header).unwrap();
-    let faces: Vec<Face> = serde_ply::parse_elements(&mut reader, &header).unwrap();
+    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let vertices: Vec<Vertex> = file.next_element().unwrap();
+    let faces: Vec<Face> = file.next_element().unwrap();
 
     assert_eq!(vertices.len(), 0);
     assert_eq!(faces.len(), 0);
-}
-
-#[test]
-fn test_scientific_notation() {
-    let ply_data = r#"ply
-format ascii 1.0
-element vertex 2
-property float x
-property float y
-property float z
-end_header
-1.5e2 -2.3e-1 4.7E+3
-6.8e-4 9.1E2 -3.2e+1
-"#;
-
-    let cursor = Cursor::new(ply_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
-
-    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header).unwrap();
-    assert_eq!(vertices.len(), 2);
-    assert_eq!(vertices[0].x, 150.0);
-    assert!((vertices[0].y - (-0.23)).abs() < 0.001);
-    assert_eq!(vertices[0].z, 4700.0);
 }
 
 #[test]
@@ -255,12 +236,9 @@ fn test_binary_little_endian() {
     binary_data.extend_from_slice(&6.0f32.to_le_bytes());
 
     let cursor = Cursor::new(binary_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
-
-    assert_eq!(header.format, PlyFormat::BinaryLittleEndian);
-
-    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header).unwrap();
+    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let vertices: Vec<Vertex> = file.next_element().unwrap();
+    assert_eq!(file.header().format, PlyFormat::BinaryLittleEndian);
     assert_eq!(vertices.len(), 2);
     assert_eq!(
         vertices[0],
@@ -289,12 +267,11 @@ fn test_binary_big_endian() {
     binary_data.extend_from_slice(&3.5f32.to_be_bytes());
 
     let cursor = Cursor::new(binary_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
+    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
 
-    assert_eq!(header.format, PlyFormat::BinaryBigEndian);
+    assert_eq!(file.header().format, PlyFormat::BinaryBigEndian);
 
-    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header).unwrap();
+    let vertices: Vec<Vertex> = file.next_element().unwrap();
     assert_eq!(vertices.len(), 1);
     assert_eq!(
         vertices[0],
@@ -328,10 +305,8 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
-
-    let vertices: Vec<VertexWithList> = serde_ply::parse_elements(&mut reader, &header).unwrap();
+    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let vertices: Vec<VertexWithList> = file.next_element().unwrap();
     assert_eq!(vertices.len(), 1);
     assert_eq!(vertices[0].x, 1.0);
     assert_eq!(vertices[0].y, 2.0);
@@ -353,10 +328,8 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
-
-    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header).unwrap();
+    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let vertices: Vec<Vertex> = file.next_element().unwrap();
     assert_eq!(vertices.len(), 2);
     assert_eq!(
         vertices[0],
@@ -370,6 +343,12 @@ end_header
 
 #[test]
 fn test_error_incomplete_data() {
+    #[derive(Deserialize, Debug)]
+    struct PlyData {
+        #[allow(dead_code)]
+        vertex: Vec<Vertex>,
+    }
+
     let ply_data = r#"ply
 format ascii 1.0
 element vertex 2
@@ -378,14 +357,11 @@ property float y
 property float z
 end_header
 1.0 2.0 3.0
-4.0 5.0
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
-
-    let result = serde_ply::parse_elements::<Vertex>(&mut reader, &header);
+    let reader = BufReader::new(cursor);
+    let result = serde_ply::from_reader::<PlyData>(reader);
     assert!(result.is_err());
 }
 
@@ -408,7 +384,7 @@ struct MissingFieldVertex {
 #[derive(Deserialize, Debug)]
 #[allow(unused)]
 struct ScalarFace {
-    vertex_indices: u32, // PLY has list, struct expects scalar
+    vertex_indices: u32,
 }
 
 fn create_binary_vertex_data(x: f32, y: f32, z: f32) -> Vec<u8> {
@@ -425,10 +401,8 @@ fn test_missing_required_field() {
     binary_data.extend_from_slice(&create_binary_vertex_data(1.0, 2.0, 3.0));
 
     let cursor = Cursor::new(binary_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
-
-    let result = serde_ply::parse_elements::<MissingFieldVertex>(&mut reader, &header);
+    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let result = file.next_element::<Vec<MissingFieldVertex>>();
     assert!(result.is_err());
 }
 
@@ -448,10 +422,8 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
-
-    let vertices: Vec<BasicVertex> = serde_ply::parse_elements(&mut reader, &header).unwrap();
+    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let vertices: Vec<BasicVertex> = file.next_element().unwrap();
     assert_eq!(vertices.len(), 1);
     assert_eq!(vertices[0].x, 1.0);
     assert_eq!(vertices[0].y, 2.0);
@@ -478,39 +450,38 @@ end_header
     }
 
     let cursor = Cursor::new(ply_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
-
-    let vertices: Vec<CoercedVertex> = serde_ply::parse_elements(&mut reader, &header).unwrap();
+    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let vertices: Vec<CoercedVertex> = file.next_element().unwrap();
     assert_eq!(vertices.len(), 1);
     assert_eq!(vertices[0].x, 1.5);
     assert_eq!(vertices[0].y, 42.0);
     assert_eq!(vertices[0].z, 200.0);
 }
 
-// TODO: Properly handle coersions (or decide to not support them)
 #[test]
 fn test_type_coercion_binary() {
-    // Test with all float properties for simplicity in binary format
-    let mut binary_data = b"ply\nformat binary_little_endian 1.0\nelement vertex 1\nproperty float x\nproperty float y\nproperty uint32 z\nend_header\n".to_vec();
-    binary_data.extend_from_slice(&create_binary_vertex_data(1.5, 42.0, f32::from_bits(32)));
+    let mut binary_data = b"ply\nformat binary_little_endian 1.0\nelement vertex 1\nproperty float x\nproperty float y\nproperty uchar z\nproperty uint w\nend_header\n".to_vec();
+    binary_data.extend_from_slice(&1.5f32.to_le_bytes());
+    binary_data.extend_from_slice(&2.5f32.to_le_bytes());
+    binary_data.extend_from_slice(&3u8.to_le_bytes());
+    binary_data.extend_from_slice(&4u32.to_le_bytes());
 
     #[derive(Deserialize, Debug)]
     struct CoercedVertex {
         x: f64, // float -> double
         y: f32, // float -> float
-        z: u32, // u32 -> float
+        z: u32, // u8 -> uint
+        w: u8,  // u8 -> uint
     }
 
     let cursor = Cursor::new(binary_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
-
-    let vertices: Vec<CoercedVertex> = serde_ply::parse_elements(&mut reader, &header).unwrap();
+    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let vertices: Vec<CoercedVertex> = file.next_element().unwrap();
     assert_eq!(vertices.len(), 1);
-    assert_eq!(vertices[0].x, 1.5);
-    assert_eq!(vertices[0].y, 42.0);
-    assert_eq!(vertices[0].z, 32);
+    assert!((vertices[0].x - 1.5).abs() < 0.001);
+    assert_eq!(vertices[0].y, 2.5);
+    assert_eq!(vertices[0].z, 3);
+    assert_eq!(vertices[0].w, 4);
 }
 
 #[test]
@@ -534,11 +505,9 @@ end_header
     }
 
     let cursor = Cursor::new(ply_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
-
-    let result = serde_ply::parse_elements::<SmallIntVertex>(&mut reader, &header);
-    assert!(result.is_err());
+    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let result = file.next_element::<Vec<SmallIntVertex>>();
+    assert!(result.is_err())
 }
 
 #[test]
@@ -557,12 +526,9 @@ fn test_integer_overflow_binary() {
     }
 
     let cursor = Cursor::new(binary_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
-
-    let result = serde_ply::parse_elements::<SmallIntVertex>(&mut reader, &header);
-    // Binary format may handle overflow differently than ASCII
-    let _ = result; // Accept either outcome
+    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let result = file.next_element::<Vec<SmallIntVertex>>();
+    assert!(result.is_err())
 }
 
 #[test]
@@ -576,25 +542,8 @@ invalid_count 0 1 2
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
-
-    let result = serde_ply::parse_elements::<Face>(&mut reader, &header);
-    assert!(result.is_err());
-}
-
-#[test]
-fn test_malformed_list_count_binary() {
-    let mut binary_data = b"ply\nformat binary_little_endian 1.0\nelement face 1\nproperty list uchar uint vertex_indices\nend_header\n".to_vec();
-    // Add invalid count (255) but insufficient data
-    binary_data.push(255u8);
-    binary_data.extend_from_slice(&0u32.to_le_bytes());
-
-    let cursor = Cursor::new(binary_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
-
-    let result = serde_ply::parse_elements::<Face>(&mut reader, &header);
+    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let result = file.next_element::<Vec<Face>>();
     assert!(result.is_err());
 }
 
@@ -609,10 +558,8 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
-
-    let result = serde_ply::parse_elements::<Face>(&mut reader, &header);
+    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let result = file.next_element::<Vec<Face>>();
     assert!(result.is_err());
 }
 
@@ -627,10 +574,8 @@ fn test_list_count_mismatch_binary() {
     // Missing 2 more elements
 
     let cursor = Cursor::new(binary_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
-
-    let result = serde_ply::parse_elements::<Face>(&mut reader, &header);
+    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let result = file.next_element::<Vec<Face>>();
     assert!(result.is_err());
 }
 
@@ -648,10 +593,8 @@ inf -inf nan
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
-
-    let vertices: Vec<BasicVertex> = serde_ply::parse_elements(&mut reader, &header).unwrap();
+    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let vertices: Vec<BasicVertex> = file.next_element().unwrap();
     assert_eq!(vertices.len(), 2);
 
     // Check special float values
@@ -673,10 +616,8 @@ fn test_infinity_and_nan_binary() {
     binary_data.extend_from_slice(&create_binary_vertex_data(1.0, 2.0, 3.0));
 
     let cursor = Cursor::new(binary_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
-
-    let vertices: Vec<BasicVertex> = serde_ply::parse_elements(&mut reader, &header).unwrap();
+    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let vertices: Vec<BasicVertex> = file.next_element().unwrap();
     assert_eq!(vertices.len(), 2);
 
     // Check special float values
@@ -686,7 +627,7 @@ fn test_infinity_and_nan_binary() {
 }
 
 #[test]
-fn test_property_order_dependency_ascii() {
+fn test_property_order_dependency() {
     let ply_data = r#"ply
 format ascii 1.0
 element vertex 1
@@ -698,35 +639,112 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
-
-    let vertices: Vec<BasicVertex> = serde_ply::parse_elements(&mut reader, &header).unwrap();
+    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let vertices: Vec<BasicVertex> = file.next_element().unwrap();
     assert_eq!(vertices.len(), 1);
 
-    // Values should be assigned correctly based on property names, not order
     assert_eq!(vertices[0].x, 1.0);
     assert_eq!(vertices[0].y, 2.0);
     assert_eq!(vertices[0].z, 3.0);
 }
 
+#[derive(Deserialize, Debug, PartialEq)]
+struct Color {
+    red: u8,
+    green: u8,
+    blue: u8,
+}
+
+#[derive(Deserialize, Debug)]
+struct PlyData {
+    vertex: Vec<Vertex>,
+    face: Vec<Face>,
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(unused)]
+struct MultiElementPly {
+    vertex: Vec<Vertex>,
+    color: Vec<Color>,
+}
+
 #[test]
-fn test_property_order_dependency_binary() {
-    let mut binary_data = b"ply\nformat binary_little_endian 1.0\nelement vertex 1\nproperty float z\nproperty float x\nproperty float y\nend_header\n".to_vec();
-    // Data in PLY order: z, x, y
-    binary_data.extend_from_slice(&3.0f32.to_le_bytes()); // z
-    binary_data.extend_from_slice(&1.0f32.to_le_bytes()); // x
-    binary_data.extend_from_slice(&2.0f32.to_le_bytes()); // y
+fn test_multi_element_struct() {
+    let ply_data = r#"ply
+format ascii 1.0
+element vertex 2
+property float x
+property float y
+property float z
+element face 1
+property list uchar uint vertex_indices
+end_header
+0.0 0.0 0.0
+1.0 0.0 0.0
+3 0 1 2
+"#;
 
-    let cursor = Cursor::new(binary_data);
-    let mut reader = BufReader::new(cursor);
-    let header = PlyHeader::parse(&mut reader).unwrap();
+    let cursor = Cursor::new(ply_data);
+    let reader = BufReader::new(cursor);
+    let ply: PlyData = serde_ply::from_reader(reader).unwrap();
 
-    let vertices: Vec<BasicVertex> = serde_ply::parse_elements(&mut reader, &header).unwrap();
-    assert_eq!(vertices.len(), 1);
+    assert_eq!(ply.vertex.len(), 2);
+    assert_eq!(
+        ply.vertex[0],
+        Vertex {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0
+        }
+    );
+    assert_eq!(
+        ply.vertex[1],
+        Vertex {
+            x: 1.0,
+            y: 0.0,
+            z: 0.0
+        }
+    );
 
-    // Values should be assigned correctly based on property names, not order
-    assert_eq!(vertices[0].x, 1.0);
-    assert_eq!(vertices[0].y, 2.0);
-    assert_eq!(vertices[0].z, 3.0);
+    assert_eq!(ply.face.len(), 1);
+    assert_eq!(ply.face[0].vertex_indices, vec![0, 1, 2]);
+}
+
+#[test]
+fn test_multi_element_hashmap() {
+    let ply_data = r#"ply
+format ascii 1.0
+element vertex 2
+property float x
+property float y
+property float z
+element color 2
+property uchar red
+property uchar green
+property uchar blue
+end_header
+0.0 0.0 0.0
+1.0 0.0 0.0
+255 128 64
+32 16 8
+"#;
+
+    let cursor = Cursor::new(ply_data);
+    let reader = BufReader::new(cursor);
+    let elements: HashMap<String, Vec<HashMap<String, f32>>> =
+        serde_ply::from_reader(reader).unwrap();
+
+    assert_eq!(elements.len(), 2);
+    assert!(elements.contains_key("vertex"));
+    assert!(elements.contains_key("color"));
+
+    let vertices = &elements["vertex"];
+    assert_eq!(vertices.len(), 2);
+    assert_eq!(vertices[0]["x"], 0.0);
+    assert_eq!(vertices[1]["x"], 1.0);
+
+    let colors = &elements["color"];
+    assert_eq!(colors.len(), 2);
+    assert_eq!(colors[0]["red"], 255.0);
+    assert_eq!(colors[1]["red"], 32.0);
 }

@@ -4,10 +4,9 @@ High-performance PLY parser and writer with type-level format specialization.
 
 ## Key Features
 
-**Performance**: ~620 MB/s read throughput, 4.8x faster binary vs ASCII writing
-**Architecture**: Eliminates all runtime dispatch via type-level specialization
-**Memory**: Constant usage regardless of file size, zero intermediate allocations
-**Complete Format Support**: Read and write ASCII, binary little-endian, and binary big-endian
+**Serde integration**: Supports most serde features
+**Performance**: High performant implementation (~1.5 GB/s on an M4) while being compatible with serde features.
+**Spec compliant**: Read and write ASCII, binary little-endian, and binary big-endian, list, comments, etc.
 
 ## API
 
@@ -19,21 +18,29 @@ use serde::Deserialize;
 #[derive(Deserialize)]
 struct Vertex { x: f32, y: f32, z: f32 }
 
-#[derive(Deserialize)]  
+#[derive(Deserialize)]
 struct Face { vertex_indices: Vec<u32> }
 
-// Parse header (advances reader)
+// Multi-element parsing
+#[derive(Deserialize)]
+struct PlyData {
+    vertex: Vec<Vertex>,
+    face: Vec<Face>,
+}
+
+let mut reader = std::io::BufReader::new(file);
+let deserializer = serde_ply::PlyFileDeserializer::from_reader(reader)?;
+let ply: PlyData = serde::Deserialize::deserialize(deserializer)?;
+
+// Single-element parsing
 let mut reader = std::io::BufReader::new(file);
 let header = serde_ply::PlyHeader::parse(&mut reader)?;
-
-// Parse elements sequentially (reader advances through data)
-let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header, "vertex")?;
-let faces: Vec<Face> = serde_ply::parse_elements(&mut reader, &header, "face")?;
+let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header)?;
 
 // Supports Serde field renaming and aliases
 #[derive(Deserialize)]
 struct FlexibleVertex {
-    #[serde(rename = "x")]           // Map PLY "x" to "position_x" 
+    #[serde(rename = "x")]           // Map PLY "x" to "position_x"
     position_x: f32,
     #[serde(alias = "y", alias = "pos_y")]  // Accept "y" OR "pos_y" from PLY
     position_y: f32,
@@ -44,7 +51,7 @@ struct FlexibleVertex {
 #[derive(Deserialize)]
 struct VertexWithConversion {
     x: f32,
-    y: f32, 
+    y: f32,
     z: f32,
     #[serde(deserialize_with = "u8_to_normalized_f32")]
     red: f32,    // PLY has u8, we want normalized f32
@@ -137,9 +144,9 @@ loop {
     if let Some(chunk) = vertex_reader.next_chunk::<Vertex>(&mut ply_file)? {
         all_vertices.extend(chunk);
     }
-    
+
     if vertex_reader.is_finished() { break; }
-    
+
     if let Some(chunk) = chunk_iter.next() {
         ply_file.feed_data(&chunk);
     } else { break; }
@@ -168,11 +175,11 @@ let mut file_parser = header_parser.into_file_parser()?;
 loop {
     let chunk = read_chunk().await?;
     file_parser.add_data(&chunk);
-    
+
     if let Some(vertices) = file_parser.parse_chunk::<Vertex>("vertex")? {
         process_vertices(vertices).await;
     }
-    
+
     if file_parser.is_element_complete("vertex") {
         file_parser.advance_to_next_element();
     }
@@ -198,7 +205,7 @@ No runtime format dispatch on the critical path.
 ### Performance Optimizations
 
 - **Type-level format specialization**: Zero runtime dispatch - format decision made once per batch
-- **byteorder integration**: Direct `reader.read_f32::<E>()` calls  
+- **byteorder integration**: Direct `reader.read_f32::<E>()` calls
 - **Pre-computed field layout**: Eliminates property lookups
 - **Serde visitor pattern**: Zero intermediate allocations
 
@@ -207,7 +214,7 @@ No runtime format dispatch on the critical path.
 **Reading (1K vertices) - Latest benchmarks:**
 ```
   Simple binary:     12.4 µs @ 2.04 GiB/s
-  Realistic binary:  36.6 µs @ 709 MiB/s  
+  Realistic binary:  36.6 µs @ 709 MiB/s
   Realistic ASCII:   402 µs @ 98 MiB/s
   Binary advantage:  11x faster
 ```
@@ -235,15 +242,14 @@ No runtime format dispatch on the critical path.
 - Better error messages with format context
 
 **Current Features:**
-- Multi-element files supported with sequential parsing
-- All PLY scalar types (char to double) in all formats
-- List properties fully supported in ASCII and binary
-- Complete round-trip serialization support
+- Native Serde multi-element parsing
+- All PLY scalar types in all formats
+- List properties fully supported
+- Complete round-trip serialization
 - Full Serde field renaming and alias support
-- **Chunked parsing for async-like processing of large files**
-- **Custom field conversion with `#[serde(deserialize_with)]` support**
-- **Advanced serde features: `skip`, `default`, `Option<T>`, `transparent` wrappers**
-- **Full PLY specification compliance: all scalar types, lists, multi-element files**
+- Chunked parsing for large files
+- Advanced serde features: `skip`, `default`, `Option<T>`
+- Full PLY specification compliance
 
 ## Implementation Details
 
@@ -270,7 +276,7 @@ No runtime format dispatch on the critical path.
 - Proper endianness handling via type parameters
 - Round-trip validation for all formats
 
-**Memory Efficiency**: 
+**Memory Efficiency**:
 - Zero intermediate allocations during read/write
 - Direct struct population from PLY data
 - Constant memory usage regardless of file size

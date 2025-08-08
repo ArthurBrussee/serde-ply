@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_ply::PlyFileDeserializer;
 use std::io::{BufReader, Cursor};
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -16,8 +17,14 @@ struct Face {
     vertex_indices: Vec<u32>,
 }
 
+#[derive(Deserialize, Debug)]
+struct PlyData {
+    vertex: Vec<Vertex>,
+    face: Vec<Face>,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Read PLY file
+    // Sample PLY file with multiple elements
     let ply_data = r#"ply
 format ascii 1.0
 element vertex 3
@@ -36,12 +43,22 @@ end_header
 3 0 1 2
 "#;
 
+    println!("Decode using serde: \n");
     let cursor = Cursor::new(ply_data);
-    let mut reader = BufReader::new(cursor);
-    let header = serde_ply::PlyHeader::parse(&mut reader)?;
+    let reader = BufReader::new(cursor);
+    let ply: PlyData = serde_ply::from_reader(reader)?;
 
-    let vertices: Vec<Vertex> = serde_ply::parse_elements(&mut reader, &header)?;
-    let faces: Vec<Face> = serde_ply::parse_elements(&mut reader, &header)?;
+    println!(
+        "Parsed {} vertices and {} faces",
+        ply.vertex.len(),
+        ply.face.len()
+    );
+
+    println!("\nParse element by element: \n");
+    let cursor = Cursor::new(ply_data);
+    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor))?;
+    let vertices: Vec<Vertex> = file.next_element()?;
+    let faces: Vec<Face> = file.next_element()?;
 
     println!(
         "Parsed {} vertices and {} faces",
@@ -72,7 +89,7 @@ end_header
     };
 
     let ply_string = serde_ply::to_string(&output_header, &vertices)?;
-    println!("Generated PLY:\n{ply_string}");
+    println!("Serialized PLY:\n {ply_string}");
 
     Ok(())
 }

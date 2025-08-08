@@ -29,7 +29,7 @@ impl<R: Read> AsciiValReader<R> {
     }
 }
 
-pub trait ValReader {
+pub trait ScalarReader {
     fn read_i8(&mut self) -> Result<i8, PlyError>;
     fn read_u8(&mut self) -> Result<u8, PlyError>;
     fn read_i16(&mut self) -> Result<i16, PlyError>;
@@ -40,7 +40,7 @@ pub trait ValReader {
     fn read_f64(&mut self) -> Result<f64, PlyError>;
 }
 
-impl<R: Read, E: ByteOrder> ValReader for BinValReader<R, E> {
+impl<R: Read, E: ByteOrder> ScalarReader for BinValReader<R, E> {
     fn read_i8(&mut self) -> Result<i8, PlyError> {
         Ok(self.reader.read_i8()?)
     }
@@ -74,7 +74,7 @@ impl<R: Read, E: ByteOrder> ValReader for BinValReader<R, E> {
     }
 }
 
-impl<R: Read> ValReader for AsciiValReader<R> {
+impl<R: Read> ScalarReader for AsciiValReader<R> {
     fn read_i8(&mut self) -> Result<i8, PlyError> {
         Ok(read_ascii_token(&mut self.reader)?.parse::<i8>()?)
     }

@@ -144,10 +144,9 @@ fn test_binary_round_trip() {
     let ply_bytes = serde_ply::to_bytes(&header, &original_vertices).unwrap();
 
     let cursor = Cursor::new(ply_bytes);
-    let mut reader = std::io::BufReader::new(cursor);
-    let parsed_header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
-    let deserialized_vertices: Vec<RoundTripVertex> =
-        serde_ply::parse_elements(&mut reader, &parsed_header).unwrap();
+    let mut file =
+        serde_ply::PlyFileDeserializer::from_reader(std::io::BufReader::new(cursor)).unwrap();
+    let deserialized_vertices: Vec<RoundTripVertex> = file.next_element().unwrap();
 
     assert_eq!(original_vertices, deserialized_vertices);
 }
@@ -206,10 +205,9 @@ fn test_ascii_round_trip() {
     let ply_str = String::from_utf8(ply_bytes).unwrap();
 
     let cursor = Cursor::new(ply_str.as_bytes());
-    let mut reader = std::io::BufReader::new(cursor);
-    let parsed_header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
-    let deserialized_vertices: Vec<RoundTripVertex> =
-        serde_ply::parse_elements(&mut reader, &parsed_header).unwrap();
+    let mut file =
+        serde_ply::PlyFileDeserializer::from_reader(std::io::BufReader::new(cursor)).unwrap();
+    let deserialized_vertices: Vec<RoundTripVertex> = file.next_element().unwrap();
 
     assert_eq!(original_vertices, deserialized_vertices);
 }

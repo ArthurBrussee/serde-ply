@@ -23,14 +23,14 @@ fn find_header_end(buffer: &[u8]) -> Option<usize> {
     None
 }
 
-pub struct PlyFile {
+pub struct ChunkPlyFile {
     header: Option<PlyHeader>,
     current_element_index: usize,
     rows_parsed: usize,
     data_buffer: Vec<u8>,
 }
 
-impl PlyFile {
+impl ChunkPlyFile {
     pub fn new() -> Self {
         Self {
             header: None,
@@ -80,9 +80,7 @@ impl PlyFile {
 
         // Make sure header is parsed
         let Some(header) = &self.header else {
-            return Err(PlyError::InvalidHeader(
-                "Not in element parsing state".into(),
-            ));
+            return Ok(vec![]);
         };
 
         let mut cursor = Cursor::new(&self.data_buffer);
@@ -107,15 +105,15 @@ impl PlyFile {
             let elem = match header.format {
                 PlyFormat::Ascii => T::deserialize(&mut RowDeserializer::new(
                     AsciiValReader::new(&mut cursor),
-                    &element_def,
+                    element_def.clone(),
                 )),
                 PlyFormat::BinaryLittleEndian => T::deserialize(&mut RowDeserializer::new(
                     BinValReader::<_, LittleEndian>::new(&mut cursor),
-                    &element_def,
+                    element_def.clone(),
                 )),
                 PlyFormat::BinaryBigEndian => T::deserialize(&mut RowDeserializer::new(
                     BinValReader::<_, BigEndian>::new(&mut cursor),
-                    &element_def,
+                    element_def.clone(),
                 )),
             };
 
@@ -153,7 +151,7 @@ impl PlyFile {
     }
 }
 
-impl Default for PlyFile {
+impl Default for ChunkPlyFile {
     fn default() -> Self {
         Self::new()
     }

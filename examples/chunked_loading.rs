@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use serde_ply::{PlyError, PlyFile};
+use serde_ply::{ChunkPlyFile, PlyError};
 
 #[derive(Deserialize, Debug, PartialEq)]
 struct Vertex {
@@ -36,7 +36,7 @@ end_header
 7.0 8.0 9.0
 "#;
 
-    let mut ply_file = PlyFile::new();
+    let mut ply_file = ChunkPlyFile::new();
     let mut total = 0;
 
     // Feed in small chunks
@@ -72,7 +72,7 @@ end_header
         ply_data.push_str(&format!("{}.0 {}.0 {}.0\n", i, i + 1, i + 2));
     }
 
-    let mut ply_file = PlyFile::new();
+    let mut ply_file = ChunkPlyFile::new();
     // Split data into chunks for the demo. In reality you might eg. have an async stream with data.
     let chunks: Vec<&[u8]> = ply_data.as_bytes().chunks(100).collect();
     let mut chunk_iter = chunks.iter();
@@ -114,7 +114,7 @@ fn demonstrate_binary_chunked() -> Result<(), PlyError> {
         }
     }
 
-    let mut ply_file = PlyFile::new();
+    let mut ply_file = ChunkPlyFile::new();
     let chunks: Vec<&[u8]> = binary_data.chunks(15).collect();
     let mut chunk_iter = chunks.iter();
 

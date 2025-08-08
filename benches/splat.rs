@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use serde::Deserialize;
 
-use std::io::{BufReader, Cursor, Seek};
+use std::io::{BufReader, Cursor};
 
 #[derive(Deserialize)]
 #[allow(unused)]
@@ -114,6 +114,12 @@ struct GaussianSplat {
     sh_val_47: f32,
 }
 
+#[derive(Deserialize)]
+#[allow(unused)]
+struct SplatPly {
+    vertex: Vec<GaussianSplat>,
+}
+
 fn generate_test_data(num_splats: usize) -> Vec<u8> {
     let mut header = String::from("ply\nformat binary_little_endian 1.0\n");
     header.push_str(&format!("element vertex {num_splats}\n"));
@@ -167,23 +173,15 @@ fn bench_gaussian_splat(c: &mut Criterion) {
     let num_splats = 10000;
     let test_data = generate_test_data(num_splats);
 
-    // Pre-parse header to exclude from benchmark
-    let cursor = Cursor::new(&test_data);
-    let mut reader = BufReader::new(cursor);
-    let header = serde_ply::PlyHeader::parse(&mut reader).unwrap();
-
-    // Get data after header for benchmarking
-    let header_end_pos = reader.stream_position().unwrap();
-    let data_after_header = &test_data[header_end_pos as usize..];
-
     let mut group = c.benchmark_group("gaussian_splat");
     group.throughput(Throughput::Elements(num_splats as u64));
 
-    group.bench_with_input("gaussian_splat", &data_after_header, |b, data| {
+    group.bench_function("gaussian_splat", |b| {
         b.iter(|| {
-            let cursor = Cursor::new(black_box(data));
-            let splats: Vec<GaussianSplat> = serde_ply::parse_elements(cursor, &header).unwrap();
-            black_box(splats)
+            let cursor = Cursor::new(black_box(&test_data));
+            let reader = BufReader::new(cursor);
+            let ply: SplatPly = serde_ply::from_reader(reader).unwrap();
+            black_box(ply.vertex)
         });
     });
 
