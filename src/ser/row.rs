@@ -449,7 +449,7 @@ pub struct ListSerializer<'a, W: ScalarWriter> {
     val_writer: &'a mut W,
 }
 
-impl<'_, W: ScalarWriter> SerializeSeq for ListSerializer<'_, W> {
+impl<W: ScalarWriter> SerializeSeq for ListSerializer<'_, W> {
     type Ok = ();
     type Error = PlyError;
 
