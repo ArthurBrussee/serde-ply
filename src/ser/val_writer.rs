@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::io::Write;
 use std::marker::PhantomData;
 
@@ -22,11 +23,15 @@ impl<W: Write, E: ByteOrder> BinValWriter<W, E> {
 
 pub struct AsciiValWriter<W: Write> {
     writer: W,
+    first_in_row: bool,
 }
 
 impl<W: Write> AsciiValWriter<W> {
     pub(crate) fn new(writer: W) -> Self {
-        Self { writer }
+        Self {
+            writer,
+            first_in_row: true,
+        }
     }
 }
 
@@ -81,49 +86,53 @@ impl<W: Write, E: ByteOrder> ScalarWriter for BinValWriter<W, E> {
     }
 }
 
+impl<W: Write> AsciiValWriter<W> {
+    fn write_field(&mut self, val: impl Display) -> Result<(), PlyError> {
+        if !self.first_in_row {
+            write!(self.writer, " ")?;
+        }
+        self.first_in_row = false;
+        write!(self.writer, "{val}")?;
+        Ok(())
+    }
+}
+
 impl<W: Write> ScalarWriter for AsciiValWriter<W> {
     fn write_i8(&mut self, val: i8) -> Result<(), PlyError> {
-        write!(self.writer, "{} ", val)?;
-        Ok(())
+        self.write_field(val)
     }
 
     fn write_u8(&mut self, val: u8) -> Result<(), PlyError> {
-        write!(self.writer, "{} ", val)?;
-        Ok(())
+        self.write_field(val)
     }
 
     fn write_i16(&mut self, val: i16) -> Result<(), PlyError> {
-        write!(self.writer, "{} ", val)?;
-        Ok(())
+        self.write_field(val)
     }
 
     fn write_u16(&mut self, val: u16) -> Result<(), PlyError> {
-        write!(self.writer, "{} ", val)?;
-        Ok(())
+        self.write_field(val)
     }
 
     fn write_i32(&mut self, val: i32) -> Result<(), PlyError> {
-        write!(self.writer, "{} ", val)?;
-        Ok(())
+        self.write_field(val)
     }
 
     fn write_u32(&mut self, val: u32) -> Result<(), PlyError> {
-        write!(self.writer, "{} ", val)?;
-        Ok(())
+        self.write_field(val)
     }
 
     fn write_f32(&mut self, val: f32) -> Result<(), PlyError> {
-        write!(self.writer, "{} ", val)?;
-        Ok(())
+        self.write_field(val)
     }
 
     fn write_f64(&mut self, val: f64) -> Result<(), PlyError> {
-        write!(self.writer, "{} ", val)?;
-        Ok(())
+        self.write_field(val)
     }
 
     fn write_row_end(&mut self) -> Result<(), PlyError> {
         writeln!(self.writer)?;
+        self.first_in_row = true;
         Ok(())
     }
 }
