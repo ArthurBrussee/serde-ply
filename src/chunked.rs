@@ -6,7 +6,7 @@ use crate::{
     PlyError, PlyFormat, PlyHeader,
 };
 use byteorder::{BigEndian, LittleEndian};
-use serde::Deserialize;
+use serde::{de::SeqAccess, Deserialize, Deserializer};
 use std::io::Cursor;
 
 pub struct ChunkPlyFile {
@@ -51,77 +51,109 @@ impl ChunkPlyFile {
     }
 
     /// Parse the next chunk of elements from the buffer.
-    pub fn next_chunk<T>(&mut self) -> Result<Vec<T>, PlyError>
+    pub fn next_chunk<T>(&mut self) -> Result<T, PlyError>
     where
         T: for<'de> Deserialize<'de>,
     {
-        // Make sure header is parsed
-        let _ = self.header();
-        let Some(header) = &self.header else {
-            return Ok(vec![]);
-        };
+        T::deserialize(self)
+    }
+}
 
+impl<'de> Deserializer<'de> for &'_ mut ChunkPlyFile {
+    type Error = PlyError;
+
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_seq(visitor)
+    }
+
+    fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        let _ = self.header();
+        // Make sure header is parsed
+        let Some(header) = &self.header else {
+            return visitor.visit_seq(EmptySeq);
+        };
         // Check if we've moved past all elements, if so error that we've run out of elements.
         if self.current_element_index >= header.elements.len() {
             return Err(PlyError::MissingElement);
         }
+        visitor.visit_seq(ChunkPlyFileSeqVisitor { parent: self })
+    }
 
-        // Find the element definition and clone it to avoid borrowing issues
-        let element_def = &header.elements[self.current_element_index];
+    serde::forward_to_deserialize_any! {
+        bool i8 u8 i16 u16 i32 u32 f32 f64 i128 i64 u128 u64 char str string
+        bytes byte_buf unit unit_struct newtype_struct tuple
+        tuple_struct map struct enum identifier ignored_any option
+    }
+}
 
-        // TODO: Maybe size based on last return?
-        let mut elements = Vec::with_capacity(64);
-        let mut cursor = Cursor::new(&self.data_buffer);
+struct ChunkPlyFileSeqVisitor<'a> {
+    parent: &'a mut ChunkPlyFile,
+}
 
-        // TODO: Ideally we'd figure out the format OUTSIDE the loop. The optimizer probably does so anyway
-        // but would be nice to be sure.
-        // TODO: Maybe this could all be some custom deserialized struct that would support streaming?
-        for _ in self.rows_parsed..element_def.row_count {
-            let start_cursor_pos = cursor.position();
+struct EmptySeq;
 
-            let elem = match header.format {
-                PlyFormat::Ascii => {
-                    let mut val = AsciiValReader::new(&mut cursor);
-                    T::deserialize(RowDeserializer::new(&mut val, element_def))
-                }
-                PlyFormat::BinaryLittleEndian => {
-                    let mut val = BinValReader::<_, LittleEndian>::new(&mut cursor);
-                    T::deserialize(RowDeserializer::new(&mut val, element_def))
-                }
-                PlyFormat::BinaryBigEndian => {
-                    let mut val = BinValReader::<_, BigEndian>::new(&mut cursor);
-                    T::deserialize(RowDeserializer::new(&mut val, element_def))
-                }
-            };
+impl<'de> SeqAccess<'de> for EmptySeq {
+    type Error = PlyError;
 
-            match elem {
-                Ok(element) => {
-                    elements.push(element);
-                }
-                // Not enough data for this element, stop here
-                Err(PlyError::Io(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                    cursor.set_position(start_cursor_pos);
-                    break;
-                }
-                Err(e) => return Err(e),
-            }
-        }
+    fn next_element_seed<T>(&mut self, _seed: T) -> Result<Option<T::Value>, Self::Error>
+    where
+        T: serde::de::DeserializeSeed<'de>,
+    {
+        Ok(None)
+    }
+}
 
-        // Remove consumed bytes from buffer
-        if cursor.position() > 0 {
-            self.data_buffer.drain(..cursor.position() as usize);
-        }
+impl<'de> SeqAccess<'de> for ChunkPlyFileSeqVisitor<'_> {
+    type Error = PlyError;
 
-        // Break when parsed all elements.
-        self.rows_parsed += elements.len();
+    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
+    where
+        T: serde::de::DeserializeSeed<'de>,
+    {
+        let header = &self.parent.header.as_ref().unwrap();
+        let element_def = &header.elements[self.parent.current_element_index];
 
         // If we've parsed all elements move to the next element.
-        if self.rows_parsed >= element_def.row_count {
-            self.rows_parsed = 0;
-            self.current_element_index += 1;
+        if self.parent.rows_parsed >= element_def.row_count {
+            self.parent.rows_parsed = 0;
+            self.parent.current_element_index += 1;
+            return Ok(None);
         }
 
-        Ok(elements)
+        let mut cursor = Cursor::new(&self.parent.data_buffer);
+
+        let elem = match header.format {
+            PlyFormat::Ascii => {
+                let mut val = AsciiValReader::new(&mut cursor);
+                seed.deserialize(RowDeserializer::new(&mut val, element_def))
+            }
+            PlyFormat::BinaryLittleEndian => {
+                let mut val = BinValReader::<_, LittleEndian>::new(&mut cursor);
+                seed.deserialize(RowDeserializer::new(&mut val, element_def))
+            }
+            PlyFormat::BinaryBigEndian => {
+                let mut val = BinValReader::<_, BigEndian>::new(&mut cursor);
+                seed.deserialize(RowDeserializer::new(&mut val, element_def))
+            }
+        };
+
+        match elem {
+            Ok(element) => {
+                // Remove consumed bytes from buffer
+                self.parent.data_buffer.drain(..cursor.position() as usize);
+                self.parent.rows_parsed += 1;
+                Ok(Some(element))
+            }
+            // Not enough data for this element, stop here
+            Err(PlyError::Io(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => Ok(None),
+            Err(e) => Err(e),
+        }
     }
 }
 

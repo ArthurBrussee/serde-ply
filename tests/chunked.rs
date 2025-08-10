@@ -37,7 +37,7 @@ end_header
 
     let mut ply_file = ChunkPlyFile::new();
     ply_file.buffer_mut().extend_from_slice(ply_data.as_bytes());
-    let vertices = ply_file.next_chunk::<Vertex>().unwrap();
+    let vertices: Vec<Vertex> = ply_file.next_chunk().unwrap();
     assert_eq!(vertices.len(), 3);
     assert_eq!(
         vertices[0],
@@ -75,7 +75,7 @@ fn test_binary_basic() {
     let mut ply_file = ChunkPlyFile::new();
     ply_file.buffer_mut().extend_from_slice(&binary_data);
 
-    let parsed = ply_file.next_chunk::<Vertex>().unwrap();
+    let parsed: Vec<Vertex> = ply_file.next_chunk().unwrap();
     assert_eq!(parsed.len(), 2);
     assert_eq!(
         parsed[0],
@@ -111,7 +111,7 @@ end_header
     ply_file.buffer_mut().extend_from_slice(ply_data.as_bytes());
 
     // Should get first vertex
-    let chunk1 = ply_file.next_chunk::<Vertex>().unwrap();
+    let chunk1: Vec<Vertex> = ply_file.next_chunk().unwrap();
     assert_eq!(chunk1.len(), 1);
     assert_eq!(
         chunk1[0],
@@ -123,14 +123,14 @@ end_header
     );
 
     // No more complete vertices available
-    let chunk2 = ply_file.next_chunk::<Vertex>().unwrap();
+    let chunk2: Vec<Vertex> = ply_file.next_chunk().unwrap();
     assert!(chunk2.is_empty());
 
     // Add the missing vertex data
     ply_file.buffer_mut().extend_from_slice(b"4.0 5.0 6.0\n");
 
     // Now should get the second vertex
-    let chunk3 = ply_file.next_chunk::<Vertex>().unwrap();
+    let chunk3: Vec<Vertex> = ply_file.next_chunk().unwrap();
     assert_eq!(chunk3.len(), 1);
     assert_eq!(
         chunk3[0],
@@ -168,7 +168,7 @@ fn test_binary_incomplete_elements() {
         .extend_from_slice(&binary_data[..header_size + first_vertex_size]);
 
     // Should parse exactly one vertex
-    let chunk1 = ply_file.next_chunk::<Vertex>().unwrap();
+    let chunk1: Vec<Vertex> = ply_file.next_chunk().unwrap();
     assert_eq!(chunk1.len(), 1);
     assert_eq!(
         chunk1[0],
@@ -180,7 +180,7 @@ fn test_binary_incomplete_elements() {
     );
 
     // Call again - should return empty list (no complete elements available)
-    assert!(ply_file.next_chunk::<Vertex>().unwrap().is_empty());
+    assert!(ply_file.next_chunk::<Vec<Vertex>>().unwrap().is_empty());
 
     // Feed partial second vertex (only 8 bytes out of 12)
     ply_file.buffer_mut().extend_from_slice(
@@ -188,7 +188,7 @@ fn test_binary_incomplete_elements() {
     );
 
     // Should still return empty list (incomplete element)
-    assert!(ply_file.next_chunk::<Vertex>().unwrap().is_empty());
+    assert!(ply_file.next_chunk::<Vec<Vertex>>().unwrap().is_empty());
 
     // Feed remaining data
     ply_file
@@ -196,7 +196,7 @@ fn test_binary_incomplete_elements() {
         .extend_from_slice(&binary_data[header_size + first_vertex_size + 8..]);
 
     // Now should get the second vertex
-    let chunk2 = ply_file.next_chunk::<Vertex>().unwrap();
+    let chunk2: Vec<Vertex> = ply_file.next_chunk().unwrap();
     assert_eq!(chunk2.len(), 1);
     assert_eq!(
         chunk2[0],
@@ -232,11 +232,11 @@ end_header
     ply_file.buffer_mut().extend_from_slice(ply_data.as_bytes());
 
     // Parse vertices
-    let vertices = ply_file.next_chunk::<Vertex>().unwrap();
+    let vertices: Vec<Vertex> = ply_file.next_chunk().unwrap();
     assert_eq!(vertices.len(), 2);
 
     // Parse colors
-    let colors = ply_file.next_chunk::<Color>().unwrap();
+    let colors: Vec<Color> = ply_file.next_chunk().unwrap();
     assert_eq!(colors.len(), 2);
     assert_eq!(
         colors[0],
@@ -270,7 +270,7 @@ end_header
     let mut ply_file = ChunkPlyFile::new();
     ply_file.buffer_mut().extend_from_slice(ply_data.as_bytes());
 
-    let faces = ply_file.next_chunk::<Face>().unwrap();
+    let faces: Vec<Face> = ply_file.next_chunk().unwrap();
     assert_eq!(faces.len(), 2);
     assert_eq!(faces[0].vertex_indices, vec![0, 1, 2]);
     assert_eq!(faces[1].vertex_indices, vec![0, 1, 2, 3]);
@@ -293,10 +293,10 @@ end_header
 
     // Feed data in 3-byte chunks
     let data = ply_data.as_bytes();
-    let mut vertices = vec![];
+    let mut vertices: Vec<Vertex> = vec![];
     for chunk in data.chunks(3) {
         ply_file.buffer_mut().extend_from_slice(chunk);
-        vertices.extend(ply_file.next_chunk::<Vertex>().unwrap());
+        vertices.extend(ply_file.next_chunk::<Vec<Vertex>>().unwrap());
     }
 
     assert_eq!(vertices.len(), 2);
@@ -331,7 +331,7 @@ end_header
 
     let mut ply_file = ChunkPlyFile::new();
     ply_file.buffer_mut().extend_from_slice(ply_data.as_bytes());
-    assert!(ply_file.next_chunk::<Vertex>().unwrap().is_empty());
+    assert!(ply_file.next_chunk::<Vec<Vertex>>().unwrap().is_empty());
 }
 
 #[test]
@@ -357,19 +357,19 @@ fn test_binary_incomplete_lists() {
     ply_file.buffer_mut().extend_from_slice(&binary_data);
 
     // Should parse only the first complete face
-    let faces1 = ply_file.next_chunk::<Face>().unwrap();
+    let faces1: Vec<Face> = ply_file.next_chunk().unwrap();
     assert_eq!(faces1.len(), 1);
     assert_eq!(faces1[0].vertex_indices, vec![0, 1, 2]);
 
     // Call again - should return no faces (incomplete second face)
-    assert!(ply_file.next_chunk::<Face>().unwrap().is_empty());
+    assert!(ply_file.next_chunk::<Vec<Face>>().unwrap().is_empty());
 
     // Add missing data for second face
     ply_file.buffer_mut().extend_from_slice(&2i32.to_le_bytes()); // index 2
     ply_file.buffer_mut().extend_from_slice(&3i32.to_le_bytes()); // index 3
 
     // Now should get the second face
-    let faces2 = ply_file.next_chunk::<Face>().unwrap();
+    let faces2 = ply_file.next_chunk::<Vec<Face>>().unwrap();
     assert_eq!(faces2.len(), 1);
     assert_eq!(faces2[0].vertex_indices, vec![0, 1, 2, 3]);
 }
@@ -401,7 +401,7 @@ fn test_binary_lists() {
     // Feed in small chunks to test list boundary detection
     for chunk in binary_data.chunks(6) {
         ply_file.buffer_mut().extend_from_slice(chunk);
-        faces.extend(ply_file.next_chunk::<Face>().unwrap());
+        faces.extend(ply_file.next_chunk::<Vec<Face>>().unwrap());
     }
 
     assert_eq!(faces.len(), 2);

@@ -39,7 +39,7 @@ fn main() -> Result<(), PlyError> {
         // Feed in a chunk of data.
         ply_file.buffer_mut().extend_from_slice(chunk);
         // Parse a chunk of vertices.
-        let chunk = ply_file.next_chunk::<Vertex>()?;
+        let chunk: Vec<Vertex> = ply_file.next_chunk()?;
         println!("Decoded chunk with {} vertices", chunk.len());
     }
 
