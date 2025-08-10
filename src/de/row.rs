@@ -183,7 +183,7 @@ struct ListSeqAccess<'a, E> {
     _endian: PhantomData<E>,
 }
 
-impl<'a, 'de, E: ScalarReader> SeqAccess<'de> for ListSeqAccess<'a, E> {
+impl<'de, E: ScalarReader> SeqAccess<'de> for ListSeqAccess<'_, E> {
     type Error = PlyError;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>

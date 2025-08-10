@@ -400,7 +400,7 @@ pub struct HeaderMapCollector<'a, W: Write> {
     recursion: Recursion,
 }
 
-impl<'a, W: Write> SerializeMap for HeaderMapCollector<'a, W> {
+impl<W: Write> SerializeMap for HeaderMapCollector<'_, W> {
     type Ok = ();
     type Error = PlyError;
 
@@ -699,7 +699,7 @@ impl<W: Write> SerializeSeq for ListPropertyCollector<'_, W> {
     }
 }
 
-impl<'a, W: Write> ListPropertyCollector<'a, W> {
+impl<W: Write> ListPropertyCollector<'_, W> {
     fn write_list_prop(&mut self, t: ScalarType) -> Result<(), PlyError> {
         Ok(writeln!(
             self.writer,
