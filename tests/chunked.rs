@@ -31,13 +31,12 @@ property float y
 property float z
 end_header
 0.0 0.0 0.0
-1.0 0.0 0.0
+2.0 0.0 0.0
 0.5 1.0 0.0
 "#;
 
     let mut ply_file = ChunkPlyFile::new();
     ply_file.buffer_mut().extend_from_slice(ply_data.as_bytes());
-
     let vertices = ply_file.next_chunk::<Vertex>().unwrap();
     assert_eq!(vertices.len(), 3);
     assert_eq!(

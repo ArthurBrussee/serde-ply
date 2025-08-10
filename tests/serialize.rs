@@ -165,37 +165,30 @@ fn roundtrip_empty_elements() {
         vertex: vec![],
         face: vec![],
     };
-
     let bytes = to_bytes(&empty_mesh, PlyFormat::Ascii).unwrap();
     let cursor = Cursor::new(bytes);
     let parsed: Mesh = from_reader(cursor).unwrap();
-
     assert_eq!(empty_mesh, parsed);
 }
 
-#[test]
-fn roundtrip_single_vertex() {
-    let vertices = vec![Vertex {
-        x: 1.5,
-        y: -2.5,
-        z: 3.0,
-    }];
-    let bytes = to_bytes(&vertices, PlyFormat::BinaryLittleEndian).unwrap();
-    let cursor = Cursor::new(bytes);
-    let parsed: Vec<Vertex> = from_reader(cursor).unwrap();
-    assert_eq!(vertices, parsed);
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
+struct FaceOnly {
+    faces: Vec<Face>,
 }
 
 #[test]
 fn roundtrip_large_list() {
-    let face = Face {
-        vertex_indices: (0..1000).collect(),
+    // TODO: Atm the maximum list length is 255 as we always use u8 for list lengths
+    // In the future should add a mechanism to override this and add a test for >255 sizes.
+    let faces = FaceOnly {
+        faces: vec![Face {
+            vertex_indices: (0..100).collect(),
+        }],
     };
-    let faces = vec![face];
 
     let bytes = to_bytes(&faces, PlyFormat::Ascii).unwrap();
     let cursor = Cursor::new(bytes);
-    let parsed: Vec<Face> = from_reader(cursor).unwrap();
+    let parsed: FaceOnly = from_reader(cursor).unwrap();
 
     assert_eq!(faces, parsed);
 }

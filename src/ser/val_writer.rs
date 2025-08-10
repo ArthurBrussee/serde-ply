@@ -40,7 +40,7 @@ pub trait ScalarWriter {
     fn write_f32(&mut self, val: f32) -> Result<(), PlyError>;
     fn write_f64(&mut self, val: f64) -> Result<(), PlyError>;
 
-    fn write_end(&mut self) -> Result<(), PlyError>;
+    fn write_row_end(&mut self) -> Result<(), PlyError>;
 }
 
 impl<W: Write, E: ByteOrder> ScalarWriter for BinValWriter<W, E> {
@@ -76,7 +76,7 @@ impl<W: Write, E: ByteOrder> ScalarWriter for BinValWriter<W, E> {
         Ok(self.writer.write_f64::<E>(val)?)
     }
 
-    fn write_end(&mut self) -> Result<(), PlyError> {
+    fn write_row_end(&mut self) -> Result<(), PlyError> {
         Ok(())
     }
 }
@@ -122,7 +122,7 @@ impl<W: Write> ScalarWriter for AsciiValWriter<W> {
         Ok(())
     }
 
-    fn write_end(&mut self) -> Result<(), PlyError> {
+    fn write_row_end(&mut self) -> Result<(), PlyError> {
         writeln!(self.writer)?;
         Ok(())
     }

@@ -1,11 +1,11 @@
+use crate::{ser::val_writer::ScalarWriter, PlyError, ScalarType};
+
 use std::marker::PhantomData;
 
 use serde::{
     ser::{SerializeMap, SerializeSeq, SerializeStruct},
     Serialize, Serializer,
 };
-
-use crate::{ser::val_writer::ScalarWriter, PlyError, ScalarType};
 
 pub(crate) struct RowSerializer<W: ScalarWriter> {
     pub val_writer: W,
@@ -222,7 +222,7 @@ impl<'a, W: ScalarWriter> SerializeMap for RowMapSerializer<'a, W> {
     }
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        self.parent.val_writer.write_end()?;
+        self.parent.val_writer.write_row_end()?;
         Ok(())
     }
 }
@@ -241,7 +241,7 @@ impl<'a, W: ScalarWriter> SerializeStruct for RowMapSerializer<'a, W> {
     }
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        self.parent.val_writer.write_end()?;
+        self.parent.val_writer.write_row_end()?;
         Ok(())
     }
 }
@@ -373,6 +373,12 @@ impl<'a, W: ScalarWriter> Serializer for PropertySerializer<'a, W> {
         let count = len.ok_or_else(|| {
             PlyError::UnsupportedType("sequence without known length".to_string())
         })?;
+
+        if count > 255 {
+            return Err(PlyError::UnsupportedType(
+                "sequence length exceeds maximum".to_string(),
+            ));
+        }
 
         // TODO: How to support this properly?
         let count_type = ScalarType::U8;

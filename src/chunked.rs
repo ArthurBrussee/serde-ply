@@ -9,20 +9,6 @@ use byteorder::{BigEndian, LittleEndian};
 use serde::Deserialize;
 use std::io::Cursor;
 
-/// Find the position of the last byte in "end_header\n"
-fn find_header_end(buffer: &[u8]) -> Option<usize> {
-    let pattern = b"end_header\n";
-    if buffer.len() < pattern.len() {
-        return None;
-    }
-    for i in 0..=(buffer.len() - pattern.len()) {
-        if &buffer[i..i + pattern.len()] == pattern {
-            return Some(i + pattern.len() - 1);
-        }
-    }
-    None
-}
-
 pub struct ChunkPlyFile {
     header: Option<PlyHeader>,
     current_element_index: usize,
@@ -54,18 +40,11 @@ impl ChunkPlyFile {
     pub fn header(&mut self) -> Option<&PlyHeader> {
         if self.header.is_none() {
             let available_data = &self.data_buffer;
-
-            if let Some(end_pos) = find_header_end(available_data) {
-                let header_data = available_data[..=end_pos].to_vec();
-                let leftover_data = available_data[end_pos + 1..].to_vec();
-
-                let cursor = std::io::Cursor::new(&header_data);
-                let mut reader = std::io::BufReader::new(cursor);
-
-                if let Ok(header) = PlyHeader::parse(&mut reader) {
-                    self.header = Some(header);
-                    self.data_buffer = leftover_data;
-                }
+            let mut cursor = Cursor::new(available_data);
+            let header = PlyHeader::parse(&mut cursor);
+            if let Ok(header) = header {
+                self.header = Some(header);
+                self.data_buffer.drain(..cursor.position() as usize);
             }
         }
         self.header.as_ref()
@@ -76,14 +55,11 @@ impl ChunkPlyFile {
     where
         T: for<'de> Deserialize<'de>,
     {
-        let _ = self.header();
-
         // Make sure header is parsed
+        let _ = self.header();
         let Some(header) = &self.header else {
             return Ok(vec![]);
         };
-
-        let mut cursor = Cursor::new(&self.data_buffer);
 
         // Check if we've moved past all elements, if so error that we've run out of elements.
         if self.current_element_index >= header.elements.len() {
@@ -91,30 +67,31 @@ impl ChunkPlyFile {
         }
 
         // Find the element definition and clone it to avoid borrowing issues
-        // TODO: Ideally, we wouldn't need to clone the element def here.
-        let element_def = header.elements[self.current_element_index].clone();
-        let mut elements = Vec::with_capacity(64);
+        let element_def = &header.elements[self.current_element_index];
 
-        // TODO: Seperate loop per format.
-        // Parse lines from the buffer. Try the maximum rows we have remaining.
+        // TODO: Maybe size based on last return?
+        let mut elements = Vec::with_capacity(64);
+        let mut cursor = Cursor::new(&self.data_buffer);
+
+        // TODO: Ideally we'd figure out the format OUTSIDE the loop. The optimizer probably does so anyway
+        // but would be nice to be sure.
+        // TODO: Maybe this could all be some custom deserialized struct that would support streaming?
         for _ in self.rows_parsed..element_def.row_count {
             let start_cursor_pos = cursor.position();
 
-            // TODO: This if should hopefully be moved out of the loop automatically, but maybe
-            // double check if that's the case.
             let elem = match header.format {
-                PlyFormat::Ascii => T::deserialize(&mut RowDeserializer::new(
-                    AsciiValReader::new(&mut cursor),
-                    element_def.clone(),
-                )),
-                PlyFormat::BinaryLittleEndian => T::deserialize(&mut RowDeserializer::new(
-                    BinValReader::<_, LittleEndian>::new(&mut cursor),
-                    element_def.clone(),
-                )),
-                PlyFormat::BinaryBigEndian => T::deserialize(&mut RowDeserializer::new(
-                    BinValReader::<_, BigEndian>::new(&mut cursor),
-                    element_def.clone(),
-                )),
+                PlyFormat::Ascii => {
+                    let mut val = AsciiValReader::new(&mut cursor);
+                    T::deserialize(RowDeserializer::new(&mut val, element_def))
+                }
+                PlyFormat::BinaryLittleEndian => {
+                    let mut val = BinValReader::<_, LittleEndian>::new(&mut cursor);
+                    T::deserialize(RowDeserializer::new(&mut val, element_def))
+                }
+                PlyFormat::BinaryBigEndian => {
+                    let mut val = BinValReader::<_, BigEndian>::new(&mut cursor);
+                    T::deserialize(RowDeserializer::new(&mut val, element_def))
+                }
             };
 
             match elem {
@@ -126,25 +103,22 @@ impl ChunkPlyFile {
                     cursor.set_position(start_cursor_pos);
                     break;
                 }
-                Err(e) => return Err(e), // Other errors
+                Err(e) => return Err(e),
             }
-
-            // Break when parsed all elements.
-            self.rows_parsed += 1;
-            if self.rows_parsed >= element_def.row_count {
-                break;
-            }
-        }
-
-        // If we've parsed all elements move to the next element.
-        if self.rows_parsed >= element_def.row_count {
-            self.rows_parsed = 0;
-            self.current_element_index += 1;
         }
 
         // Remove consumed bytes from buffer
         if cursor.position() > 0 {
             self.data_buffer.drain(..cursor.position() as usize);
+        }
+
+        // Break when parsed all elements.
+        self.rows_parsed += elements.len();
+
+        // If we've parsed all elements move to the next element.
+        if self.rows_parsed >= element_def.row_count {
+            self.rows_parsed = 0;
+            self.current_element_index += 1;
         }
 
         Ok(elements)

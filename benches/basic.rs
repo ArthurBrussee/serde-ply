@@ -144,13 +144,12 @@ end_header
 }
 
 fn benchmark_parsing(c: &mut Criterion) {
+    let vertex_count = 5000;
+
     let mut group = c.benchmark_group("parsing");
 
-    // Simple binary parsing (3 floats per vertex)
-    let vertex_count = 5000;
     let binary_data = generate_binary_ply(vertex_count);
     group.throughput(Throughput::Bytes(binary_data.len() as u64));
-
     group.bench_function("simple_binary", |b| {
         b.iter(|| {
             // Parse header once outside the benchmark
@@ -160,10 +159,8 @@ fn benchmark_parsing(c: &mut Criterion) {
         });
     });
 
-    // Realistic binary parsing (6 fields per vertex)
     let realistic_data = generate_realistic_ply(vertex_count);
     group.throughput(Throughput::Bytes(realistic_data.len() as u64));
-
     group.bench_function("realistic_binary", |b| {
         b.iter(|| {
             // Parse header once outside the benchmark
@@ -173,10 +170,8 @@ fn benchmark_parsing(c: &mut Criterion) {
         });
     });
 
-    // ASCII parsing comparison
     let ascii_data = generate_ascii_ply(vertex_count);
     group.throughput(Throughput::Bytes(ascii_data.len() as u64));
-
     group.bench_function("ascii", |b| {
         b.iter(|| {
             // Parse header once outside the benchmark
@@ -186,10 +181,8 @@ fn benchmark_parsing(c: &mut Criterion) {
         });
     });
 
-    // Multi-element parsing
     let multi_element_data = generate_multi_element_ply(vertex_count, vertex_count / 3);
     group.throughput(Throughput::Bytes(multi_element_data.len() as u64));
-
     group.bench_function("multi_element", |b| {
         b.iter(|| {
             let cursor = Cursor::new(black_box(&multi_element_data));
@@ -202,44 +195,5 @@ fn benchmark_parsing(c: &mut Criterion) {
     group.finish();
 }
 
-fn benchmark_chunked_parsing(c: &mut Criterion) {
-    let mut group = c.benchmark_group("chunked");
-
-    let vertex_count = 500;
-    let binary_data = generate_binary_ply(vertex_count);
-    group.throughput(Throughput::Bytes(binary_data.len() as u64));
-
-    group.bench_function("chunked_4k", |b| {
-        b.iter(|| {
-            let mut ply_file = serde_ply::ChunkPlyFile::new();
-            let chunk_size = 4096;
-
-            // Feed data in chunks using the buffer_mut API
-            for chunk in binary_data.chunks(chunk_size) {
-                ply_file.buffer_mut().extend_from_slice(black_box(chunk));
-
-                // Parse all vertices
-                let _vertices = ply_file.next_chunk::<Vertex>().unwrap();
-            }
-        });
-    });
-
-    group.bench_function("chunked_all_at_once", |b| {
-        b.iter(|| {
-            let mut ply_file = serde_ply::ChunkPlyFile::new();
-
-            // Feed all data at once using the buffer_mut API
-            ply_file
-                .buffer_mut()
-                .extend_from_slice(black_box(&binary_data));
-
-            // Parse all vertices in one call
-            let _vertices = ply_file.next_chunk::<Vertex>().unwrap();
-        });
-    });
-
-    group.finish();
-}
-
-criterion_group!(benches, benchmark_parsing, benchmark_chunked_parsing);
+criterion_group!(benches, benchmark_parsing);
 criterion_main!(benches);

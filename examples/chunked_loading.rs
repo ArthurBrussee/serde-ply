@@ -14,100 +14,17 @@ struct Face {
 }
 
 fn main() -> Result<(), PlyError> {
-    println!("=== Chunked PLY Parsing ===\n");
-    demo_basic_chunked()?;
-    demonstrate_binary_chunked()?;
-    demo_large_file_simulation()?;
-    Ok(())
-}
+    let vertex_count = 64;
 
-fn demo_basic_chunked() -> Result<(), PlyError> {
-    println!("--- Basic chunked parsing ---");
-
-    let ply_data = r#"ply
-format ascii 1.0
-element vertex 3
-property float x
-property float y
-property float z
-end_header
-1.0 2.0 3.0
-4.0 5.0 6.0
-7.0 8.0 9.0
-"#;
-
-    let mut ply_file = ChunkPlyFile::new();
-    let mut total = 0;
-
-    // Feed in small chunks
-    for chunk in ply_data.as_bytes().chunks(15) {
-        ply_file.buffer_mut().extend_from_slice(chunk);
-
-        // Parse all vertices
-        let chunk = ply_file.next_chunk::<Vertex>()?;
-        total += chunk.len();
-    }
-
-    println!("Completed: {total} vertices\n");
-    Ok(())
-}
-
-fn demo_large_file_simulation() -> Result<(), PlyError> {
-    println!("--- Large file simulation ---");
-
-    // Create larger PLY data
-    let mut ply_data = String::from(
-        r#"ply
-format ascii 1.0
-element vertex 50
-property float x
-property float y
-property float z
-end_header
-"#,
+    let header = format!(
+        "ply\nformat binary_little_endian 1.0\nelement vertex {vertex_count}\nproperty float x\nproperty float y\nproperty float z\nend_header\n"
     );
-
-    // Add 50 vertices
-    for i in 0..50 {
-        ply_data.push_str(&format!("{}.0 {}.0 {}.0\n", i, i + 1, i + 2));
-    }
-
-    let mut ply_file = ChunkPlyFile::new();
-    // Split data into chunks for the demo. In reality you might eg. have an async stream with data.
-    let chunks: Vec<&[u8]> = ply_data.as_bytes().chunks(100).collect();
-    let mut chunk_iter = chunks.iter();
-
-    // Process header
-    while ply_file.header().is_none() {
-        ply_file
-            .buffer_mut()
-            .extend_from_slice(chunk_iter.next().unwrap());
-    }
-
-    println!("Header parsed, processing vertices...");
-
-    let total = 0;
-
-    for chunk in chunk_iter {
-        // Feed in some data.
-        ply_file.buffer_mut().extend_from_slice(chunk);
-        // Parse new incoming data.
-        let chunk = ply_file.next_chunk::<Vertex>()?;
-        println!("Processed {} vertices (total: {})", chunk.len(), total);
-    }
-
-    println!("Completed: {total} vertices total\n");
-    Ok(())
-}
-
-fn demonstrate_binary_chunked() -> Result<(), PlyError> {
-    let header = "ply\nformat binary_little_endian 1.0\nelement vertex 2\nproperty float x\nproperty float y\nproperty float z\nend_header\n";
 
     let mut binary_data = Vec::new();
     binary_data.extend_from_slice(header.as_bytes());
 
     // Add binary vertex data
-    let vertices = [[1.0f32, 2.0f32, 3.0f32], [4.0f32, 5.0f32, 6.0f32]];
+    let vertices = vec![[1.0f32, 2.0f32, 3.0f32]; vertex_count];
     for vertex in &vertices {
         for &coord in vertex {
             binary_data.extend_from_slice(&coord.to_le_bytes());
@@ -115,25 +32,15 @@ fn demonstrate_binary_chunked() -> Result<(), PlyError> {
     }
 
     let mut ply_file = ChunkPlyFile::new();
-    let chunks: Vec<&[u8]> = binary_data.chunks(15).collect();
-    let mut chunk_iter = chunks.iter();
-
-    // Header parsing
-    while ply_file.header().is_none() {
-        if let Some(chunk) = chunk_iter.next() {
-            ply_file.buffer_mut().extend_from_slice(chunk);
-        } else {
-            break;
-        }
-    }
+    let chunks: Vec<_> = binary_data.chunks(15).collect();
+    let chunk_iter = chunks.iter();
 
     for chunk in chunk_iter {
+        // Feed in a chunk of data.
         ply_file.buffer_mut().extend_from_slice(chunk);
-
+        // Parse a chunk of vertices.
         let chunk = ply_file.next_chunk::<Vertex>()?;
-        for vertex in chunk {
-            println!("Binary vertex: {vertex:?}");
-        }
+        println!("Decoded chunk with {} vertices", chunk.len());
     }
 
     Ok(())

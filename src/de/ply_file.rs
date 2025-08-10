@@ -1,4 +1,5 @@
 use core::fmt;
+use serde::de::value::BytesDeserializer;
 use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use std::io::{BufRead, Read};
@@ -6,7 +7,7 @@ use std::marker::PhantomData;
 
 use crate::de::val_reader::{AsciiValReader, BinValReader, ScalarReader};
 use crate::de::RowDeserializer;
-use crate::{PlyError, PlyFormat, PlyHeader};
+use crate::{ElementDef, PlyError, PlyFormat, PlyHeader};
 use byteorder::{BigEndian, LittleEndian};
 
 pub struct PlyFileDeserializer<R> {
@@ -33,38 +34,29 @@ impl<R: BufRead> PlyFileDeserializer<R> {
     where
         T: Deserialize<'a>,
     {
-        let a = deserialize_single_value(self)?;
-        Ok(a)
-    }
-}
-
-// Deserialize exactly a single value from a map deserializer
-fn deserialize_single_value<'de, D, T>(deserializer: D) -> Result<T, D::Error>
-where
-    D: Deserializer<'de>,
-    T: Deserialize<'de>,
-{
-    struct FirstValueVisitor<T>(PhantomData<T>);
-    impl<'de, T> Visitor<'de> for FirstValueVisitor<T>
-    where
-        T: Deserialize<'de>,
-    {
-        type Value = T;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("a map with at least one entry")
-        }
-
-        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        // Deserialize exactly a single value from a map deserializer.
+        struct FirstValueVisitor<T>(PhantomData<T>);
+        impl<'de, T> Visitor<'de> for FirstValueVisitor<T>
         where
-            A: MapAccess<'de>,
+            T: Deserialize<'de>,
         {
-            // Use next value directly. This is NOT ok in general as next_key might
-            // increment things instead but it's fine we're in charge.
-            map.next_value::<T>()
+            type Value = T;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a map with at least one entry")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                // Use next value directly. This is NOT ok in general as next_key might
+                // increment things instead but it's fine we're in charge.
+                map.next_value::<T>()
+            }
         }
+        self.deserialize_map(FirstValueVisitor(PhantomData))
     }
-    deserializer.deserialize_map(FirstValueVisitor(PhantomData))
 }
 
 impl<'de, R: BufRead> Deserializer<'de> for &mut PlyFileDeserializer<R> {
@@ -93,7 +85,6 @@ impl<'de, R: BufRead> Deserializer<'de> for &mut PlyFileDeserializer<R> {
     where
         V: Visitor<'de>,
     {
-        // TODO: Remove the cloning for the header here.
         visitor.visit_map(self)
     }
 
@@ -114,9 +105,8 @@ impl<'de, R: Read> MapAccess<'de> for &mut PlyFileDeserializer<R> {
         if self.current_element >= self.header.elements.len() {
             return Ok(None);
         }
-
-        let element_name = &self.header.elements[self.current_element].name;
-        seed.deserialize(serde::de::value::StrDeserializer::new(element_name))
+        let element_name = &self.header.elements[self.current_element].name.as_bytes();
+        seed.deserialize(BytesDeserializer::new(element_name))
             .map(Some)
     }
 
@@ -126,48 +116,45 @@ impl<'de, R: Read> MapAccess<'de> for &mut PlyFileDeserializer<R> {
     {
         // One clone per the whole element is probably fine, simplifies lifetimes a good amount.
         let elem_def = &self.header.elements[self.current_element];
+        self.current_element += 1;
 
-        let result = match self.header.format {
+        match self.header.format {
             PlyFormat::Ascii => seed.deserialize(ElementSeqDeserializer::new(
-                RowDeserializer::new(AsciiValReader::new(&mut self.reader), elem_def.clone()),
+                elem_def,
+                &mut AsciiValReader::new(&mut self.reader),
                 elem_def.row_count,
             )),
             PlyFormat::BinaryLittleEndian => seed.deserialize(ElementSeqDeserializer::new(
-                RowDeserializer::new(
-                    BinValReader::<_, LittleEndian>::new(&mut self.reader),
-                    elem_def.clone(),
-                ),
+                elem_def,
+                &mut BinValReader::<_, LittleEndian>::new(&mut self.reader),
                 elem_def.row_count,
             )),
             PlyFormat::BinaryBigEndian => seed.deserialize(ElementSeqDeserializer::new(
-                RowDeserializer::new(
-                    BinValReader::<_, BigEndian>::new(&mut self.reader),
-                    elem_def.clone(),
-                ),
+                elem_def,
+                &mut BinValReader::<_, BigEndian>::new(&mut self.reader),
                 elem_def.row_count,
             )),
-        };
-
-        self.current_element += 1;
-        result
+        }
     }
 }
 
-struct ElementSeqDeserializer<E: ScalarReader> {
-    row_deserialize: RowDeserializer<E>,
+struct ElementSeqDeserializer<'a, E: ScalarReader> {
+    elem_def: &'a ElementDef,
+    val_reader: &'a mut E,
     remaining: usize,
 }
 
-impl<E: ScalarReader> ElementSeqDeserializer<E> {
-    fn new(row_deserialize: RowDeserializer<E>, row_count: usize) -> Self {
+impl<'a, E: ScalarReader> ElementSeqDeserializer<'a, E> {
+    fn new(elem_def: &'a ElementDef, reader: &'a mut E, row_count: usize) -> Self {
         Self {
-            row_deserialize,
+            elem_def,
+            val_reader: reader,
             remaining: row_count,
         }
     }
 }
 
-impl<'de, R: ScalarReader> Deserializer<'de> for ElementSeqDeserializer<R> {
+impl<'de, 'a, R: ScalarReader> Deserializer<'de> for ElementSeqDeserializer<'a, R> {
     type Error = PlyError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -198,7 +185,7 @@ impl<'de, R: ScalarReader> Deserializer<'de> for ElementSeqDeserializer<R> {
     }
 }
 
-impl<'de, R: ScalarReader> SeqAccess<'de> for ElementSeqDeserializer<R> {
+impl<'de, 'a, R: ScalarReader> SeqAccess<'de> for ElementSeqDeserializer<'a, R> {
     type Error = PlyError;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
@@ -209,7 +196,11 @@ impl<'de, R: ScalarReader> SeqAccess<'de> for ElementSeqDeserializer<R> {
             return Ok(None);
         }
         self.remaining -= 1;
-        seed.deserialize(&mut self.row_deserialize).map(Some)
+        seed.deserialize(RowDeserializer {
+            val_reader: self.val_reader,
+            elem_def: self.elem_def,
+        })
+        .map(Some)
     }
 
     fn size_hint(&self) -> Option<usize> {

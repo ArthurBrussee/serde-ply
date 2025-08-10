@@ -1,18 +1,16 @@
+use crate::{
+    ser::{
+        row::RowSerializer,
+        val_writer::{AsciiValWriter, BinValWriter},
+    },
+    PlyError, PlyFormat,
+};
 use std::{io::Write, marker::PhantomData};
 
 use byteorder::{BigEndian, LittleEndian};
 use serde::{
     ser::{SerializeMap, SerializeSeq, SerializeStruct},
     Serialize, Serializer,
-};
-
-use crate::{
-    ser::{
-        extract_string_key,
-        row::RowSerializer,
-        val_writer::{AsciiValWriter, BinValWriter},
-    },
-    PlyError, PlyFormat,
 };
 
 pub struct PlyFileSerializer<W: Write> {
@@ -177,7 +175,6 @@ impl<'a, W: Write> Serializer for &'a mut PlyFileSerializer<W> {
         Ok(PlyMapSerializer {
             format: self.format,
             writer: &mut self.writer,
-            current_element_name: None,
         })
     }
 
@@ -189,7 +186,6 @@ impl<'a, W: Write> Serializer for &'a mut PlyFileSerializer<W> {
         Ok(PlyMapSerializer {
             format: self.format,
             writer: &mut self.writer,
-            current_element_name: None,
         })
     }
 
@@ -207,27 +203,18 @@ impl<'a, W: Write> Serializer for &'a mut PlyFileSerializer<W> {
 pub struct PlyMapSerializer<W: Write> {
     format: PlyFormat,
     writer: W,
-    current_element_name: Option<String>,
 }
 
 impl<W: Write> SerializeMap for PlyMapSerializer<W> {
     type Ok = ();
     type Error = PlyError;
 
-    fn serialize_key<T>(&mut self, key: &T) -> Result<(), Self::Error>
-    where
-        T: Serialize + ?Sized,
-    {
+    fn serialize_key<T: Serialize + ?Sized>(&mut self, _key: &T) -> Result<(), Self::Error> {
         // Capture the element name
-        let key_str = extract_string_key(key)?;
-        self.current_element_name = Some(key_str);
         Ok(())
     }
 
-    fn serialize_value<T>(&mut self, value: &T) -> Result<(), Self::Error>
-    where
-        T: Serialize + ?Sized,
-    {
+    fn serialize_value<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Self::Error> {
         // Each value should be a Vec<Row> representing an element
         value.serialize(ElementSerializer {
             format: self.format,

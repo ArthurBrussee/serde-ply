@@ -54,7 +54,7 @@ end_header
         ply.face.len()
     );
 
-    println!("\nParse element by element: \n");
+    println!("\nParse with header element by element: \n");
     let cursor = Cursor::new(ply_data);
     let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor))?;
     let vertices: Vec<Vertex> = file.next_element()?;

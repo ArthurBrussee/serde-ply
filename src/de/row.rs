@@ -1,19 +1,17 @@
-use std::marker::PhantomData;
-
+use crate::{de::val_reader::ScalarReader, ElementDef, PlyError, PropertyType, ScalarType};
 use serde::{
     de::{value::BytesDeserializer, DeserializeSeed, MapAccess, SeqAccess, Visitor},
     Deserializer,
 };
+use std::marker::PhantomData;
 
-use crate::{de::val_reader::ScalarReader, ElementDef, PlyError, PropertyType, ScalarType};
-
-pub(crate) struct RowDeserializer<E: ScalarReader> {
-    pub val_reader: E,
-    pub elem_def: ElementDef,
+pub(crate) struct RowDeserializer<'a, E: ScalarReader> {
+    pub val_reader: &'a mut E,
+    pub elem_def: &'a ElementDef,
 }
 
-impl<E: ScalarReader> RowDeserializer<E> {
-    pub fn new(val_reader: E, elem_def: ElementDef) -> Self {
+impl<'a, E: ScalarReader> RowDeserializer<'a, E> {
+    pub fn new(val_reader: &'a mut E, elem_def: &'a ElementDef) -> Self {
         Self {
             val_reader,
             elem_def,
@@ -21,7 +19,7 @@ impl<E: ScalarReader> RowDeserializer<E> {
     }
 }
 
-impl<'de, E: ScalarReader> Deserializer<'de> for &mut RowDeserializer<E> {
+impl<'de, 'a, E: ScalarReader> Deserializer<'de> for RowDeserializer<'a, E> {
     type Error = PlyError;
 
     fn deserialize_any<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
@@ -66,7 +64,7 @@ impl<'de, E: ScalarReader> Deserializer<'de> for &mut RowDeserializer<E> {
 }
 
 pub struct RowMapAccess<'a, E: ScalarReader> {
-    pub parent: &'a mut RowDeserializer<E>,
+    pub parent: RowDeserializer<'a, E>,
     pub current_property: usize,
     pub _endian: PhantomData<E>,
 }
@@ -90,19 +88,16 @@ impl<'de, 'a, E: ScalarReader> MapAccess<'de> for RowMapAccess<'a, E> {
     where
         V: DeserializeSeed<'de>,
     {
-        // SAFETY: Bounds check already has happened in next_key_seed.
-        let prop = unsafe {
-            &self
-                .parent
-                .elem_def
-                .properties
-                .get_unchecked(self.current_property)
-                .property_type
-        };
+        let prop = &self
+            .parent
+            .elem_def
+            .properties
+            .get(self.current_property)
+            .unwrap()
+            .property_type;
         self.current_property += 1;
-
         seed.deserialize(ValueDeserializer {
-            val_reader: &mut self.parent.val_reader,
+            val_reader: self.parent.val_reader,
             prop,
         })
     }
@@ -196,12 +191,9 @@ impl<'a, 'de, E: ScalarReader> SeqAccess<'de> for ListSeqAccess<'a, E> {
         T: DeserializeSeed<'de>,
     {
         if self.remaining == 0 {
-            println!("Stop de list");
             return Ok(None);
         }
-        println!("Do a scalar of the list {}", self.remaining);
         self.remaining -= 1;
-
         seed.deserialize(ScalarDeserializer::<E> {
             reader: self.val_reader,
             data_type: self.data_type,

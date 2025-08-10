@@ -1,6 +1,6 @@
+mod chunked;
 mod de;
 mod error;
-mod ply_file;
 mod ser;
 
 pub use error::PlyError;
@@ -8,18 +8,14 @@ pub use error::PlyError;
 pub use de::{from_reader, from_str};
 pub use ser::{to_bytes, to_writer};
 
-use byteorder::{BigEndian, LittleEndian};
-pub use ply_file::ChunkPlyFile;
+pub use chunked::ChunkPlyFile;
 
 pub use de::PlyFileDeserializer;
 
-use std::io::{BufRead, Read};
+use std::io::BufRead;
 
 use std::fmt::{self, Display};
 use std::str::FromStr;
-
-use crate::de::val_reader::{AsciiValReader, BinValReader};
-use crate::de::RowDeserializer;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PlyFormat {
@@ -292,40 +288,5 @@ impl PlyHeader {
 
     pub fn has_element(&self, name: &str) -> bool {
         self.elements.iter().any(|e| e.name == name)
-    }
-}
-
-// TODO: Delete when everything is moved to 'native' serde.
-pub fn parse_elements<T>(mut reader: impl Read, header: &PlyHeader) -> Result<Vec<T>, PlyError>
-where
-    T: for<'de> serde::Deserialize<'de>,
-{
-    let element_def = header.elements[0].clone();
-    let count = element_def.row_count;
-
-    match header.format {
-        PlyFormat::Ascii => {
-            let mut deserializer =
-                RowDeserializer::new(AsciiValReader::new(&mut reader), element_def);
-            (0..count)
-                .map(|_| T::deserialize(&mut deserializer))
-                .collect()
-        }
-        PlyFormat::BinaryLittleEndian => {
-            let mut deserializer = RowDeserializer::new(
-                BinValReader::<_, LittleEndian>::new(&mut reader),
-                element_def,
-            );
-            (0..count)
-                .map(|_| T::deserialize(&mut deserializer))
-                .collect()
-        }
-        PlyFormat::BinaryBigEndian => {
-            let mut deserializer =
-                RowDeserializer::new(BinValReader::<_, BigEndian>::new(&mut reader), element_def);
-            (0..count)
-                .map(|_| T::deserialize(&mut deserializer))
-                .collect()
-        }
     }
 }
