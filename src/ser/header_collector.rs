@@ -436,7 +436,7 @@ pub struct HeaderStructCollector<'a, W: Write> {
     recursion: Recursion,
 }
 
-impl<'a, W: Write> SerializeStruct for HeaderStructCollector<'a, W> {
+impl<W: Write> SerializeStruct for HeaderStructCollector<'_, W> {
     type Ok = ();
     type Error = PlyError;
 
@@ -670,7 +670,7 @@ struct ListPropertyCollector<'a, W: Write> {
     active: bool,
 }
 
-impl<'a, W: Write> SerializeSeq for ListPropertyCollector<'a, W> {
+impl<W: Write> SerializeSeq for ListPropertyCollector<'_, W> {
     type Ok = ();
     type Error = PlyError;
 
@@ -712,7 +712,7 @@ impl<'a, W: Write> ListPropertyCollector<'a, W> {
 // For rows, this is a list property, and we're trying to get the element type.
 // For now, assume u8 count type and f32 data type for lists as it's most common,
 // but we really should give users control here.
-impl<'a, W: Write> Serializer for &mut ListPropertyCollector<'a, W> {
+impl<W: Write> Serializer for &mut ListPropertyCollector<'_, W> {
     type Ok = ();
     type Error = PlyError;
 

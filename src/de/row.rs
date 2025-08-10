@@ -19,7 +19,7 @@ impl<'a, E: ScalarReader> RowDeserializer<'a, E> {
     }
 }
 
-impl<'de, 'a, E: ScalarReader> Deserializer<'de> for RowDeserializer<'a, E> {
+impl<'de, E: ScalarReader> Deserializer<'de> for RowDeserializer<'_, E> {
     type Error = PlyError;
 
     fn deserialize_any<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
@@ -69,7 +69,7 @@ pub struct RowMapAccess<'a, E: ScalarReader> {
     pub _endian: PhantomData<E>,
 }
 
-impl<'de, 'a, E: ScalarReader> MapAccess<'de> for RowMapAccess<'a, E> {
+impl<'de, E: ScalarReader> MapAccess<'de> for RowMapAccess<'_, E> {
     type Error = PlyError;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
@@ -108,7 +108,7 @@ struct ValueDeserializer<'a, E: ScalarReader> {
     prop: &'a PropertyType,
 }
 
-impl<'de, 'a, E: ScalarReader> Deserializer<'de> for ValueDeserializer<'a, E> {
+impl<'de, E: ScalarReader> Deserializer<'de> for ValueDeserializer<'_, E> {
     type Error = PlyError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -207,7 +207,7 @@ struct ScalarDeserializer<'a, E> {
     data_type: ScalarType,
 }
 
-impl<'a, 'de, E: ScalarReader> Deserializer<'de> for ScalarDeserializer<'a, E> {
+impl<'de, E: ScalarReader> Deserializer<'de> for ScalarDeserializer<'_, E> {
     type Error = PlyError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
