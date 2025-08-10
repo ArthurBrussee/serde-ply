@@ -438,7 +438,7 @@ pub struct ElementSeqSerializer<'a, W: Write> {
     writer: &'a mut W,
 }
 
-impl<'a, W: Write> SerializeSeq for ElementSeqSerializer<'a, W> {
+impl<W: Write> SerializeSeq for ElementSeqSerializer<'_, W> {
     type Ok = ();
     type Error = PlyError;
 

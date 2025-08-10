@@ -1,0 +1,86 @@
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+name: Rust
+
+env:
+  RUSTFLAGS: -D warnings
+  RUSTDOCFLAGS: -D warnings
+
+jobs:
+  fmt-crank-check-test:
+    name: Format + check + test
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.85.0
+          components: rustfmt, clippy
+
+      - name: Set up cargo cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: check --all-features
+        run: cargo check --locked --all-features --all-targets
+
+      - name: check --no-default-features
+        run: cargo check --locked --no-default-features --all-targets
+
+      - name: Rustfmt
+        run: cargo fmt --all -- --check
+
+      - name: cargo doc
+        run: cargo doc --no-deps --all-features
+
+      - name: cargo doc --document-private-items
+        run: cargo doc --document-private-items --no-deps --all-features
+
+      - name: clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  # ---------------------------------------------------------------------------
+
+  check_wasm:
+    name: Check wasm32
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.85.0
+          targets: wasm32-unknown-unknown
+
+      - run: sudo apt-get update && sudo apt-get install libgtk-3-dev libatk1.0-dev
+
+      - name: Set up cargo cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check wasm32
+        run: cargo check --target wasm32-unknown-unknown
+
+  # ---------------------------------------------------------------------------
+
+  tests:
+    name: Run tests
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.85.0
+
+      - name: Set up cargo cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run tests
+        run: cargo test --all

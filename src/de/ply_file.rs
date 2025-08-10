@@ -154,7 +154,7 @@ impl<'a, E: ScalarReader> ElementSeqDeserializer<'a, E> {
     }
 }
 
-impl<'de, 'a, R: ScalarReader> Deserializer<'de> for ElementSeqDeserializer<'a, R> {
+impl<'de, R: ScalarReader> Deserializer<'de> for ElementSeqDeserializer<'_, R> {
     type Error = PlyError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -185,7 +185,7 @@ impl<'de, 'a, R: ScalarReader> Deserializer<'de> for ElementSeqDeserializer<'a, 
     }
 }
 
-impl<'de, 'a, R: ScalarReader> SeqAccess<'de> for ElementSeqDeserializer<'a, R> {
+impl<'de, R: ScalarReader> SeqAccess<'de> for ElementSeqDeserializer<'_, R> {
     type Error = PlyError;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>

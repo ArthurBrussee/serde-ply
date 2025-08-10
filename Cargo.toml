@@ -37,3 +37,7 @@ harness = false
 [[bench]]
 name = "splat"
 harness = false
+
+
+[lints.rust]
+unsafe_code = "forbid"

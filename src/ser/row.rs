@@ -200,7 +200,7 @@ pub struct RowMapSerializer<'a, W: ScalarWriter> {
     _marker: PhantomData<W>,
 }
 
-impl<'a, W: ScalarWriter> SerializeMap for RowMapSerializer<'a, W> {
+impl<W: ScalarWriter> SerializeMap for RowMapSerializer<'_, W> {
     type Ok = ();
     type Error = PlyError;
 
@@ -227,7 +227,7 @@ impl<'a, W: ScalarWriter> SerializeMap for RowMapSerializer<'a, W> {
     }
 }
 
-impl<'a, W: ScalarWriter> SerializeStruct for RowMapSerializer<'a, W> {
+impl<W: ScalarWriter> SerializeStruct for RowMapSerializer<'_, W> {
     type Ok = ();
     type Error = PlyError;
 
@@ -449,7 +449,7 @@ pub struct ListSerializer<'a, W: ScalarWriter> {
     val_writer: &'a mut W,
 }
 
-impl<'a, W: ScalarWriter> SerializeSeq for ListSerializer<'a, W> {
+impl<W: ScalarWriter> SerializeSeq for ListSerializer<'_, W> {
     type Ok = ();
     type Error = PlyError;
 
