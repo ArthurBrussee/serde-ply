@@ -1,5 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use serde::de::DeserializeSeed;
 use serde::Deserialize;
+use serde_ply::RowVisitor;
 
 #[derive(Deserialize)]
 #[allow(unused)]
@@ -34,21 +36,25 @@ end_header
 fn benchmark_chunked_parsing(c: &mut Criterion) {
     let mut group = c.benchmark_group("chunked");
 
-    let vertex_count = 5000;
+    let vertex_count = 50000;
     let binary_data = generate_binary_ply(vertex_count);
     group.throughput(Throughput::Bytes(binary_data.len() as u64));
 
     group.bench_function("chunked_chunks", |b| {
         b.iter(|| {
             let mut ply_file = serde_ply::ChunkPlyFile::new();
-            let chunk_size = 1024 * 1024;
+            let chunk_size = 8 * 1024 * 1024;
+            let mut vertices: Vec<Vertex> = Vec::new();
 
             // Feed data in chunks using the buffer_mut API
             for chunk in binary_data.chunks(chunk_size) {
                 ply_file.buffer_mut().extend_from_slice(black_box(chunk));
 
-                // Parse all vertices
-                let _vertices: Vec<Vertex> = ply_file.next_chunk().unwrap();
+                RowVisitor::new(|vertex: Vertex| {
+                    vertices.push(vertex);
+                })
+                .deserialize(&mut ply_file)
+                .unwrap();
             }
         });
     });
@@ -56,14 +62,18 @@ fn benchmark_chunked_parsing(c: &mut Criterion) {
     group.bench_function("chunked_all_at_once", |b| {
         b.iter(|| {
             let mut ply_file = serde_ply::ChunkPlyFile::new();
+            let mut vertices: Vec<Vertex> = Vec::new();
 
             // Feed all data at once using the buffer_mut API
             ply_file
                 .buffer_mut()
                 .extend_from_slice(black_box(&binary_data));
 
-            // Parse all vertices in one call
-            let _vertices: Vec<Vertex> = ply_file.next_chunk().unwrap();
+            RowVisitor::new(|vertex: Vertex| {
+                vertices.push(vertex);
+            })
+            .deserialize(&mut ply_file)
+            .unwrap();
         });
     });
 

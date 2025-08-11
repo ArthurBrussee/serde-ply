@@ -3,14 +3,14 @@ use crate::{
         val_reader::{AsciiValReader, BinValReader, ScalarReader},
         RowDeserializer,
     },
-    PlyError, PlyFormat, PlyHeader,
+    ElementDef, PlyError, PlyFormat, PlyHeader,
 };
 use byteorder::{BigEndian, LittleEndian};
 use serde::{
-    de::{Error, SeqAccess},
+    de::{DeserializeSeed, Error, SeqAccess, Visitor},
     Deserialize, Deserializer,
 };
-use std::io::Cursor;
+use std::{io::Cursor, marker::PhantomData};
 
 pub struct ChunkPlyFile {
     header: Option<PlyHeader>,
@@ -59,6 +59,15 @@ impl ChunkPlyFile {
         T: for<'de> Deserialize<'de>,
     {
         T::deserialize(self)
+    }
+
+    pub fn current_element(&mut self) -> Option<&ElementDef> {
+        let ind = self.current_element_index;
+        self.header().map(|e| &e.elements[ind])
+    }
+
+    pub fn rows_done(&self) -> usize {
+        self.rows_parsed
     }
 }
 
@@ -201,5 +210,40 @@ impl<'de, D: AsRef<[u8]>, S: ScalarReader> SeqAccess<'de>
 impl Default for ChunkPlyFile {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+pub struct RowVisitor<T, F: FnMut(T)> {
+    row_callback: F,
+    _row: PhantomData<T>,
+}
+
+impl<T, F: FnMut(T)> RowVisitor<T, F> {
+    pub fn new(row_callback: F) -> Self {
+        Self {
+            row_callback,
+            _row: PhantomData,
+        }
+    }
+}
+
+impl<'de, T: Deserialize<'de>, F: FnMut(T)> DeserializeSeed<'de> for &mut RowVisitor<T, F> {
+    type Value = ();
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        deserializer.deserialize_seq(self)
+    }
+}
+
+impl<'de, T: Deserialize<'de>, F: FnMut(T)> Visitor<'de> for &mut RowVisitor<T, F> {
+    type Value = ();
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("a sequence of rows")
+    }
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<(), A::Error> {
+        while let Some(row) = seq.next_element()? {
+            (self.row_callback)(row);
+        }
+        Ok(())
     }
 }

@@ -7,7 +7,7 @@ pub use error::PlyError;
 pub use de::{from_reader, from_str};
 pub use ser::{to_bytes, to_writer};
 
-pub use de::chunked::ChunkPlyFile;
+pub use de::chunked::{ChunkPlyFile, RowVisitor};
 
 pub use de::PlyFileDeserializer;
 use serde::de::Error;
