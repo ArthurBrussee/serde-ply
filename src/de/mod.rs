@@ -1,11 +1,12 @@
 pub(crate) mod ply_file;
+pub(crate) use row::*;
+pub(crate) mod chunked;
 mod row;
 
 pub mod val_reader;
 use std::io::{BufRead, BufReader, Cursor};
 
 pub use ply_file::PlyFileDeserializer;
-pub use row::*;
 use serde::Deserialize;
 
 use crate::PlyError;

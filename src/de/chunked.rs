@@ -1,7 +1,7 @@
 use crate::{
     de::{
-        val_reader::{AsciiValReader, BinValReader, ReadError, ScalarReader},
-        RowDeserializer, RowError,
+        val_reader::{AsciiValReader, BinValReader, ScalarReader},
+        RowDeserializer,
     },
     PlyError, PlyFormat, PlyHeader,
 };
@@ -93,7 +93,10 @@ impl<'de> Deserializer<'de> for &'_ mut ChunkPlyFile {
             PlyFormat::Ascii => {
                 let mut seq = ChunkPlyFileSeqVisitor {
                     remaining,
-                    row: RowDeserializer::<_, AsciiValReader>::new(&mut cursor, elem_def),
+                    row: RowDeserializer::<_, AsciiValReader>::new(
+                        &mut cursor,
+                        &elem_def.properties,
+                    ),
                 };
                 let res = visitor.visit_seq(&mut seq)?;
                 (res, seq.remaining)
@@ -103,7 +106,7 @@ impl<'de> Deserializer<'de> for &'_ mut ChunkPlyFile {
                     remaining,
                     row: RowDeserializer::<_, BinValReader<LittleEndian>>::new(
                         &mut cursor,
-                        elem_def,
+                        &elem_def.properties,
                     ),
                 };
                 let res = visitor.visit_seq(&mut seq)?;
@@ -112,7 +115,10 @@ impl<'de> Deserializer<'de> for &'_ mut ChunkPlyFile {
             PlyFormat::BinaryBigEndian => {
                 let mut seq = ChunkPlyFileSeqVisitor {
                     remaining,
-                    row: RowDeserializer::<_, BinValReader<BigEndian>>::new(&mut cursor, elem_def),
+                    row: RowDeserializer::<_, BinValReader<BigEndian>>::new(
+                        &mut cursor,
+                        &elem_def.properties,
+                    ),
                 };
                 let res = visitor.visit_seq(&mut seq)?;
                 (res, seq.remaining)
@@ -168,17 +174,15 @@ impl<'de, D: AsRef<[u8]>, S: ScalarReader> SeqAccess<'de>
         if self.remaining == 0 {
             return Ok(None);
         }
-        let last_pos = self.row.reader.position();
 
+        let last_pos = self.row.reader.position();
         match seed.deserialize(&mut self.row) {
             Ok(element) => {
                 self.remaining -= 1;
                 Ok(Some(element))
             }
             // Not enough data for this element, stop here
-            Err(RowError::Read(ReadError::Io(e)))
-                if e.kind() == std::io::ErrorKind::UnexpectedEof =>
-            {
+            Err(PlyError::Io(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
                 self.row.reader.set_position(last_pos);
                 Ok(None)
             }

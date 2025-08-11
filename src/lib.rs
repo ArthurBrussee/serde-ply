@@ -1,4 +1,3 @@
-mod chunked;
 mod de;
 mod error;
 mod ser;
@@ -8,7 +7,7 @@ pub use error::PlyError;
 pub use de::{from_reader, from_str};
 pub use ser::{to_bytes, to_writer};
 
-pub use chunked::ChunkPlyFile;
+pub use de::chunked::ChunkPlyFile;
 
 pub use de::PlyFileDeserializer;
 
@@ -57,7 +56,7 @@ impl ScalarType {
             "uint" | "uint32" => Ok(ScalarType::U32),
             "float" | "float32" => Ok(ScalarType::F32),
             "double" | "float64" => Ok(ScalarType::F64),
-            _ => Err(PlyError::UnsupportedFormat(format!(
+            _ => Err(PlyError::UnsupportedType(format!(
                 "Unknown scalar type: {s}"
             ))),
         }
@@ -155,7 +154,7 @@ impl PlyHeader {
         let mut line = String::new();
         reader.read_line(&mut line)?;
         if line.trim() != "ply" {
-            return Err(PlyError::InvalidHeader(
+            return Err(PlyError::UnsupportedType(
                 "File must start with 'ply'".to_string(),
             ));
         }
@@ -171,7 +170,7 @@ impl PlyHeader {
             let mut line = String::new();
             let bytes_read = reader.read_line(&mut line)?;
             if bytes_read == 0 {
-                return Err(PlyError::InvalidHeader(
+                return Err(PlyError::UnsupportedType(
                     "Unexpected end of file".to_string(),
                 ));
             }
@@ -186,13 +185,13 @@ impl PlyHeader {
             match parts[0] {
                 "format" => {
                     if parts.len() < 3 {
-                        return Err(PlyError::InvalidHeader("Invalid format line".to_string()));
+                        return Err(PlyError::UnsupportedType("Invalid format line".to_string()));
                     }
                     format = Some(match parts[1] {
                         "ascii" => PlyFormat::Ascii,
                         "binary_little_endian" => PlyFormat::BinaryLittleEndian,
                         "binary_big_endian" => PlyFormat::BinaryBigEndian,
-                        _ => return Err(PlyError::UnsupportedFormat(parts[1].to_string())),
+                        _ => return Err(PlyError::UnsupportedType(parts[1].to_string())),
                     });
                     version = parts[2].to_string();
                 }
@@ -204,7 +203,9 @@ impl PlyHeader {
                 }
                 "element" => {
                     if parts.len() < 3 {
-                        return Err(PlyError::InvalidHeader("Invalid element line".to_string()));
+                        return Err(PlyError::UnsupportedType(
+                            "Invalid element line".to_string(),
+                        ));
                     }
 
                     if let Some(element) = current_element.take() {
@@ -213,7 +214,7 @@ impl PlyHeader {
 
                     let name = parts[1].to_string();
                     let count = parts[2].parse::<usize>().map_err(|_| {
-                        PlyError::InvalidHeader(format!("Invalid element count: {}", parts[2]))
+                        PlyError::UnsupportedType(format!("Invalid element count: {}", parts[2]))
                     })?;
 
                     current_element = Some(ElementDef {
@@ -224,17 +225,19 @@ impl PlyHeader {
                 }
                 "property" => {
                     let element = current_element.as_mut().ok_or_else(|| {
-                        PlyError::InvalidHeader("Property without element".to_string())
+                        PlyError::UnsupportedType("Property without element".to_string())
                     })?;
 
                     if parts.len() < 3 {
-                        return Err(PlyError::InvalidHeader("Invalid property line".to_string()));
+                        return Err(PlyError::UnsupportedType(
+                            "Invalid property line".to_string(),
+                        ));
                     }
 
                     if parts[1] == "list" {
                         // List property: property list <count_type> <data_type> <name>
                         if parts.len() < 5 {
-                            return Err(PlyError::InvalidHeader(
+                            return Err(PlyError::UnsupportedType(
                                 "Invalid list property line".to_string(),
                             ));
                         }
@@ -266,7 +269,7 @@ impl PlyHeader {
             elements.push(element);
         }
         let format = format
-            .ok_or_else(|| PlyError::InvalidHeader("Missing format specification".to_string()))?;
+            .ok_or_else(|| PlyError::UnsupportedType("Missing format specification".to_string()))?;
         Ok(PlyHeader {
             format,
             version,
