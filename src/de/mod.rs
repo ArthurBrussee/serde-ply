@@ -1,4 +1,4 @@
-mod ply_file;
+pub(crate) mod ply_file;
 mod row;
 
 pub mod val_reader;

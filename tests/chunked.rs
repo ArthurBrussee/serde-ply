@@ -376,35 +376,43 @@ fn test_binary_incomplete_lists() {
 
 #[test]
 fn test_binary_lists() {
-    let header = "ply\nformat binary_little_endian 1.0\nelement face 2\nproperty list uchar int vertex_indices\nend_header\n";
+    let header = "ply\nformat binary_little_endian 1.0\nelement face 8\nproperty list uchar int vertex_indices\nend_header\n";
 
     let mut binary_data = Vec::new();
     binary_data.extend_from_slice(header.as_bytes());
 
-    // Add face data: [3, 0, 1, 2] and [4, 0, 1, 2, 3]
-    // First face: count=3, indices=[0, 1, 2]
-    binary_data.push(3u8); // count
-    binary_data.extend_from_slice(&0i32.to_le_bytes()); // index 0
-    binary_data.extend_from_slice(&1i32.to_le_bytes()); // index 1
-    binary_data.extend_from_slice(&2i32.to_le_bytes()); // index 2
+    for _ in 0..4 {
+        // Add face data: [3, 0, 1, 2] and [4, 0, 1, 2, 3]
+        // First face: count=3, indices=[0, 1, 2]
+        binary_data.push(3u8); // count
+        binary_data.extend_from_slice(&0i32.to_le_bytes()); // index 0
+        binary_data.extend_from_slice(&1i32.to_le_bytes()); // index 1
+        binary_data.extend_from_slice(&2i32.to_le_bytes()); // index 2
 
-    // Second face: count=4, indices=[0, 1, 2, 3]
-    binary_data.push(4u8); // count
-    binary_data.extend_from_slice(&0i32.to_le_bytes()); // index 0
-    binary_data.extend_from_slice(&1i32.to_le_bytes()); // index 1
-    binary_data.extend_from_slice(&2i32.to_le_bytes()); // index 2
-    binary_data.extend_from_slice(&3i32.to_le_bytes()); // index 3
+        // Second face: count=4, indices=[0, 1, 2, 3]
+        binary_data.push(4u8); // count
+        binary_data.extend_from_slice(&0i32.to_le_bytes()); // index 0
+        binary_data.extend_from_slice(&1i32.to_le_bytes()); // index 1
+        binary_data.extend_from_slice(&2i32.to_le_bytes()); // index 2
+        binary_data.extend_from_slice(&3i32.to_le_bytes()); // index 3
+    }
 
     let mut ply_file = ChunkPlyFile::new();
 
     let mut faces = vec![];
     // Feed in small chunks to test list boundary detection
-    for chunk in binary_data.chunks(6) {
+    for chunk in binary_data.chunks(3) {
         ply_file.buffer_mut().extend_from_slice(chunk);
-        faces.extend(ply_file.next_chunk::<Vec<Face>>().unwrap());
+        let chunk: Vec<Face> = ply_file.next_chunk().unwrap();
+
+        for ch in &chunk {
+            println!("Ch list: {}", ch.vertex_indices.len())
+        }
+
+        faces.extend(chunk);
     }
 
-    assert_eq!(faces.len(), 2);
+    assert_eq!(faces.len(), 8);
     assert_eq!(faces[0].vertex_indices, vec![0, 1, 2]);
     assert_eq!(faces[1].vertex_indices, vec![0, 1, 2, 3]);
 }

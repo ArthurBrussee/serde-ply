@@ -38,10 +38,10 @@ fn benchmark_chunked_parsing(c: &mut Criterion) {
     let binary_data = generate_binary_ply(vertex_count);
     group.throughput(Throughput::Bytes(binary_data.len() as u64));
 
-    group.bench_function("chunked_4k", |b| {
+    group.bench_function("chunked_chunks", |b| {
         b.iter(|| {
             let mut ply_file = serde_ply::ChunkPlyFile::new();
-            let chunk_size = 4096;
+            let chunk_size = 1024 * 1024;
 
             // Feed data in chunks using the buffer_mut API
             for chunk in binary_data.chunks(chunk_size) {

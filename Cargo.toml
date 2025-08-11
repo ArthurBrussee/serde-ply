@@ -1,20 +1,19 @@
 [package]
-name = "serde_ply"
+name = "serde-ply"
 version = "0.1.0"
 edition = "2021"
 authors = ["Your Name <your.email@example.com>"]
 description = "A Serde-based PLY (Polygon File Format) serializer and deserializer"
 license = "MIT"
-repository = "https://github.com/yourusername/serde_ply"
+repository = "https://github.com/ArthurBrussee/serde_ply"
 documentation = "https://docs.rs/serde_ply"
 keywords = ["ply", "polygon", "3d", "mesh", "serde"]
-categories = ["encoding", "graphics", "parser-implementations"]
+categories = ["encoding", "graphics"]
 readme = "README.md"
 
 [lib]
 name = "serde_ply"
 path = "src/lib.rs"
-
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -23,8 +22,6 @@ byteorder = "1.4"
 
 [dev-dependencies]
 criterion = "0.5"
-tokio = { version = "1.0", features = ["full"] }
-
 
 [[bench]]
 name = "basic"
@@ -38,6 +35,9 @@ harness = false
 name = "splat"
 harness = false
 
-
 [lints.rust]
 unsafe_code = "forbid"
+
+[profile.profiling]
+inherits = "release"
+debug = true

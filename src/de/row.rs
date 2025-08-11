@@ -1,32 +1,60 @@
-use crate::{de::val_reader::ScalarReader, ElementDef, PlyError, PropertyType, ScalarType};
+use crate::{
+    de::val_reader::{ReadError, ScalarReader},
+    ElementDef, PlyError, PropertyType, ScalarType,
+};
+use core::fmt;
 use serde::{
     de::{value::BytesDeserializer, DeserializeSeed, MapAccess, SeqAccess, Visitor},
     Deserializer,
 };
-use std::marker::PhantomData;
+use std::{io::Read, marker::PhantomData};
+use thiserror::Error;
 
-pub(crate) struct RowDeserializer<'a, E: ScalarReader> {
-    pub val_reader: &'a mut E,
-    pub elem_def: &'a ElementDef,
+#[derive(Error, Debug)]
+pub(crate) enum RowError {
+    #[error("Invalid structure")]
+    InvalidStructure,
+    #[error("Other error")]
+    Other,
+
+    #[error("Read error: {0}")]
+    Read(#[from] ReadError),
 }
 
-impl<'a, E: ScalarReader> RowDeserializer<'a, E> {
-    pub fn new(val_reader: &'a mut E, elem_def: &'a ElementDef) -> Self {
+impl serde::de::Error for RowError {
+    fn custom<T: fmt::Display>(_msg: T) -> Self {
+        RowError::Other
+    }
+}
+
+pub(crate) struct RowDeserializer<'a, R: Read, S: ScalarReader> {
+    pub reader: R,
+    pub elem_def: &'a ElementDef,
+    pub current_property: usize,
+    prop_type: &'a PropertyType,
+    _marker: PhantomData<S>,
+}
+
+impl<'a, R: Read, S: ScalarReader> RowDeserializer<'a, R, S> {
+    pub fn new(reader: R, elem_def: &'a ElementDef) -> Self {
         Self {
-            val_reader,
+            current_property: 0,
+            reader,
             elem_def,
+            prop_type: &PropertyType::Scalar(ScalarType::U32), // Dummy.
+            _marker: PhantomData,
         }
     }
 }
 
-impl<'de, E: ScalarReader> Deserializer<'de> for RowDeserializer<'_, E> {
-    type Error = PlyError;
+impl<'de, R: Read, S: ScalarReader> Deserializer<'de> for &mut RowDeserializer<'_, R, S> {
+    type Error = RowError;
 
     fn deserialize_any<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        Err(PlyError::InvalidStructure)
+        Err(RowError::InvalidStructure)
     }
 
     fn deserialize_struct<V>(
@@ -38,22 +66,16 @@ impl<'de, E: ScalarReader> Deserializer<'de> for RowDeserializer<'_, E> {
     where
         V: Visitor<'de>,
     {
-        visitor.visit_map(RowMapAccess {
-            parent: self,
-            current_property: 0,
-            _endian: PhantomData,
-        })
+        self.current_property = 0;
+        visitor.visit_map(self)
     }
 
     fn deserialize_map<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_map(RowMapAccess {
-            parent: self,
-            current_property: 0,
-            _endian: PhantomData,
-        })
+        self.current_property = 0;
+        visitor.visit_map(self)
     }
 
     serde::forward_to_deserialize_any! {
@@ -63,68 +85,59 @@ impl<'de, E: ScalarReader> Deserializer<'de> for RowDeserializer<'_, E> {
     }
 }
 
-pub struct RowMapAccess<'a, E: ScalarReader> {
-    pub parent: RowDeserializer<'a, E>,
-    pub current_property: usize,
-    pub _endian: PhantomData<E>,
-}
+impl<'de, R: Read, S: ScalarReader> MapAccess<'de> for RowDeserializer<'_, R, S> {
+    type Error = RowError;
 
-impl<'de, E: ScalarReader> MapAccess<'de> for RowMapAccess<'_, E> {
-    type Error = PlyError;
-
+    #[inline]
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where
         K: DeserializeSeed<'de>,
     {
-        let Some(prop) = &self.parent.elem_def.properties.get(self.current_property) else {
-            self.parent.val_reader.read_row_end()?;
+        let Some(prop) = &self.elem_def.properties.get(self.current_property) else {
             return Ok(None);
         };
-        seed.deserialize(BytesDeserializer::<PlyError>::new(prop.name.as_bytes()))
+        self.prop_type = &prop.property_type;
+        seed.deserialize(BytesDeserializer::new(prop.name.as_bytes()))
             .map(Some)
     }
 
+    #[inline]
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
     where
         V: DeserializeSeed<'de>,
     {
-        let prop = &self
-            .parent
-            .elem_def
-            .properties
-            .get(self.current_property)
-            .unwrap()
-            .property_type;
         self.current_property += 1;
         seed.deserialize(ValueDeserializer {
-            val_reader: self.parent.val_reader,
-            prop,
+            reader: &mut self.reader,
+            prop: self.prop_type,
+            _marker: PhantomData::<S>,
         })
     }
 }
 
-struct ValueDeserializer<'a, E: ScalarReader> {
-    val_reader: &'a mut E,
+struct ValueDeserializer<'a, R: Read, S: ScalarReader> {
+    reader: R,
     prop: &'a PropertyType,
+    _marker: PhantomData<S>,
 }
 
-impl<'de, E: ScalarReader> Deserializer<'de> for ValueDeserializer<'_, E> {
-    type Error = PlyError;
+impl<'de, R: Read, S: ScalarReader> Deserializer<'de> for ValueDeserializer<'_, R, S> {
+    type Error = RowError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
         match self.prop {
-            PropertyType::Scalar { data_type } => match data_type {
-                ScalarType::I8 => visitor.visit_i8(self.val_reader.read_i8()?),
-                ScalarType::U8 => visitor.visit_u8(self.val_reader.read_u8()?),
-                ScalarType::I16 => visitor.visit_i16(self.val_reader.read_i16()?),
-                ScalarType::U16 => visitor.visit_u16(self.val_reader.read_u16()?),
-                ScalarType::I32 => visitor.visit_i32(self.val_reader.read_i32()?),
-                ScalarType::U32 => visitor.visit_u32(self.val_reader.read_u32()?),
-                ScalarType::F32 => visitor.visit_f32(self.val_reader.read_f32()?),
-                ScalarType::F64 => visitor.visit_f64(self.val_reader.read_f64()?),
+            PropertyType::Scalar(data_type) => match data_type {
+                ScalarType::I8 => visitor.visit_i8(S::read_i8(self.reader)?),
+                ScalarType::U8 => visitor.visit_u8(S::read_u8(self.reader)?),
+                ScalarType::I16 => visitor.visit_i16(S::read_i16(self.reader)?),
+                ScalarType::U16 => visitor.visit_u16(S::read_u16(self.reader)?),
+                ScalarType::I32 => visitor.visit_i32(S::read_i32(self.reader)?),
+                ScalarType::U32 => visitor.visit_u32(S::read_u32(self.reader)?),
+                ScalarType::F32 => visitor.visit_f32(S::read_f32(self.reader)?),
+                ScalarType::F64 => visitor.visit_f64(S::read_f64(self.reader)?),
             },
             PropertyType::List { .. } => self.deserialize_seq(visitor),
         }
@@ -138,7 +151,7 @@ impl<'de, E: ScalarReader> Deserializer<'de> for ValueDeserializer<'_, E> {
         visitor.visit_some(self)
     }
 
-    fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_seq<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
@@ -147,25 +160,25 @@ impl<'de, E: ScalarReader> Deserializer<'de> for ValueDeserializer<'_, E> {
             data_type,
         } = self.prop
         else {
-            return Err(PlyError::ExpectedListProperty);
+            return Err(RowError::InvalidStructure);
         };
 
         let count = match count_type {
-            ScalarType::I8 => self.val_reader.read_i8()? as usize,
-            ScalarType::U8 => self.val_reader.read_u8()? as usize,
-            ScalarType::I16 => self.val_reader.read_i16()? as usize,
-            ScalarType::U16 => self.val_reader.read_u16()? as usize,
-            ScalarType::I32 => self.val_reader.read_i32()? as usize,
-            ScalarType::U32 => self.val_reader.read_u32()? as usize,
-            ScalarType::F32 => self.val_reader.read_f32()? as usize,
-            ScalarType::F64 => self.val_reader.read_f64()? as usize,
+            ScalarType::I8 => S::read_i8(&mut self.reader)? as usize,
+            ScalarType::U8 => S::read_u8(&mut self.reader)? as usize,
+            ScalarType::I16 => S::read_i16(&mut self.reader)? as usize,
+            ScalarType::U16 => S::read_u16(&mut self.reader)? as usize,
+            ScalarType::I32 => S::read_i32(&mut self.reader)? as usize,
+            ScalarType::U32 => S::read_u32(&mut self.reader)? as usize,
+            ScalarType::F32 => S::read_f32(&mut self.reader)? as usize,
+            ScalarType::F64 => S::read_f64(&mut self.reader)? as usize,
         };
 
         visitor.visit_seq(ListSeqAccess {
-            val_reader: self.val_reader,
+            reader: &mut self.reader,
             remaining: count,
             data_type: *data_type,
-            _endian: PhantomData::<E>,
+            _marker: PhantomData::<S>,
         })
     }
 
@@ -176,15 +189,15 @@ impl<'de, E: ScalarReader> Deserializer<'de> for ValueDeserializer<'_, E> {
     }
 }
 
-struct ListSeqAccess<'a, E> {
-    val_reader: &'a mut E,
+struct ListSeqAccess<R: Read, S> {
+    reader: R,
     data_type: ScalarType,
     remaining: usize,
-    _endian: PhantomData<E>,
+    _marker: PhantomData<S>,
 }
 
-impl<'de, E: ScalarReader> SeqAccess<'de> for ListSeqAccess<'_, E> {
-    type Error = PlyError;
+impl<'de, R: Read, S: ScalarReader> SeqAccess<'de> for ListSeqAccess<R, S> {
+    type Error = RowError;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
     where
@@ -194,35 +207,37 @@ impl<'de, E: ScalarReader> SeqAccess<'de> for ListSeqAccess<'_, E> {
             return Ok(None);
         }
         self.remaining -= 1;
-        seed.deserialize(ScalarDeserializer::<E> {
-            reader: self.val_reader,
+        seed.deserialize(ScalarDeserializer {
+            reader: &mut self.reader,
             data_type: self.data_type,
+            _marker: PhantomData::<S>,
         })
         .map(Some)
     }
 }
 
-struct ScalarDeserializer<'a, E> {
-    reader: &'a mut E,
+struct ScalarDeserializer<R: Read, S: ScalarReader> {
+    reader: R,
     data_type: ScalarType,
+    _marker: PhantomData<S>,
 }
 
-impl<'de, E: ScalarReader> Deserializer<'de> for ScalarDeserializer<'_, E> {
-    type Error = PlyError;
+impl<'de, R: Read, S: ScalarReader> Deserializer<'de> for ScalarDeserializer<R, S> {
+    type Error = RowError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
         match self.data_type {
-            ScalarType::I8 => visitor.visit_i8(self.reader.read_i8()?),
-            ScalarType::U8 => visitor.visit_u8(self.reader.read_u8()?),
-            ScalarType::I16 => visitor.visit_i16(self.reader.read_i16()?),
-            ScalarType::U16 => visitor.visit_u16(self.reader.read_u16()?),
-            ScalarType::I32 => visitor.visit_i32(self.reader.read_i32()?),
-            ScalarType::U32 => visitor.visit_u32(self.reader.read_u32()?),
-            ScalarType::F32 => visitor.visit_f32(self.reader.read_f32()?),
-            ScalarType::F64 => visitor.visit_f64(self.reader.read_f64()?),
+            ScalarType::I8 => visitor.visit_i8(S::read_i8(self.reader)?),
+            ScalarType::U8 => visitor.visit_u8(S::read_u8(self.reader)?),
+            ScalarType::I16 => visitor.visit_i16(S::read_i16(self.reader)?),
+            ScalarType::U16 => visitor.visit_u16(S::read_u16(self.reader)?),
+            ScalarType::I32 => visitor.visit_i32(S::read_i32(self.reader)?),
+            ScalarType::U32 => visitor.visit_u32(S::read_u32(self.reader)?),
+            ScalarType::F32 => visitor.visit_f32(S::read_f32(self.reader)?),
+            ScalarType::F64 => visitor.visit_f64(S::read_f64(self.reader)?),
         }
     }
 

@@ -765,7 +765,7 @@ impl<W: Write> Serializer for &mut ListPropertyCollector<'_, W> {
     }
 
     fn serialize_f64(self, _v: f64) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::UnsupportedType("f64".to_string()))
+        self.write_list_prop(ScalarType::F64)
     }
 
     fn serialize_char(self, _v: char) -> Result<Self::Ok, Self::Error> {

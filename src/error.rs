@@ -6,10 +6,15 @@ use std::{
 
 use thiserror::Error;
 
+use crate::de::RowError;
+
 #[derive(Error, Debug)]
 pub enum PlyError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("Read error: {0}")]
+    Read(#[from] RowError),
 
     #[error("Invalid ascii data: {0}")]
     InvalidAscii(#[from] FromUtf8Error),

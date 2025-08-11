@@ -119,42 +119,45 @@ impl<'de, R: Read> MapAccess<'de> for &mut PlyFileDeserializer<R> {
         self.current_element += 1;
 
         match self.header.format {
-            PlyFormat::Ascii => seed.deserialize(ElementSeqDeserializer::new(
+            PlyFormat::Ascii => seed.deserialize(ElementSeqDeserializer::<_, AsciiValReader>::new(
                 elem_def,
-                &mut AsciiValReader::new(&mut self.reader),
+                &mut self.reader,
                 elem_def.row_count,
             )),
-            PlyFormat::BinaryLittleEndian => seed.deserialize(ElementSeqDeserializer::new(
+            PlyFormat::BinaryLittleEndian => seed.deserialize(ElementSeqDeserializer::<
+                _,
+                BinValReader<LittleEndian>,
+            >::new(
                 elem_def,
-                &mut BinValReader::<_, LittleEndian>::new(&mut self.reader),
+                &mut self.reader,
                 elem_def.row_count,
             )),
-            PlyFormat::BinaryBigEndian => seed.deserialize(ElementSeqDeserializer::new(
-                elem_def,
-                &mut BinValReader::<_, BigEndian>::new(&mut self.reader),
-                elem_def.row_count,
-            )),
+            PlyFormat::BinaryBigEndian => {
+                seed.deserialize(ElementSeqDeserializer::<_, BinValReader<BigEndian>>::new(
+                    elem_def,
+                    &mut self.reader,
+                    elem_def.row_count,
+                ))
+            }
         }
     }
 }
 
-struct ElementSeqDeserializer<'a, E: ScalarReader> {
-    elem_def: &'a ElementDef,
-    val_reader: &'a mut E,
+pub(crate) struct ElementSeqDeserializer<'a, R: Read, S: ScalarReader> {
+    row: RowDeserializer<'a, R, S>,
     remaining: usize,
 }
 
-impl<'a, E: ScalarReader> ElementSeqDeserializer<'a, E> {
-    fn new(elem_def: &'a ElementDef, reader: &'a mut E, row_count: usize) -> Self {
+impl<'a, R: Read, S: ScalarReader> ElementSeqDeserializer<'a, R, S> {
+    pub(crate) fn new(elem_def: &'a ElementDef, reader: R, row_count: usize) -> Self {
         Self {
-            elem_def,
-            val_reader: reader,
+            row: RowDeserializer::new(reader, elem_def),
             remaining: row_count,
         }
     }
 }
 
-impl<'de, R: ScalarReader> Deserializer<'de> for ElementSeqDeserializer<'_, R> {
+impl<'de, R: Read, S: ScalarReader> Deserializer<'de> for ElementSeqDeserializer<'_, R, S> {
     type Error = PlyError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -185,7 +188,7 @@ impl<'de, R: ScalarReader> Deserializer<'de> for ElementSeqDeserializer<'_, R> {
     }
 }
 
-impl<'de, R: ScalarReader> SeqAccess<'de> for ElementSeqDeserializer<'_, R> {
+impl<'de, R: Read, S: ScalarReader> SeqAccess<'de> for ElementSeqDeserializer<'_, R, S> {
     type Error = PlyError;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
@@ -196,11 +199,7 @@ impl<'de, R: ScalarReader> SeqAccess<'de> for ElementSeqDeserializer<'_, R> {
             return Ok(None);
         }
         self.remaining -= 1;
-        seed.deserialize(RowDeserializer {
-            val_reader: self.val_reader,
-            elem_def: self.elem_def,
-        })
-        .map(Some)
+        Ok(seed.deserialize(&mut self.row).map(Some)?)
     }
 
     fn size_hint(&self) -> Option<usize> {

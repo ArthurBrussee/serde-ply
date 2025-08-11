@@ -99,7 +99,7 @@ impl Display for ScalarType {
 #[derive(Debug, Clone)]
 enum PropertyType {
     /// A scalar property with a single value
-    Scalar { data_type: ScalarType },
+    Scalar(ScalarType),
     /// A list property with variable length
     List {
         count_type: ScalarType,
@@ -118,7 +118,7 @@ impl PlyProperty {
     pub fn scalar(name: String, data_type: ScalarType) -> Self {
         Self {
             name,
-            property_type: PropertyType::Scalar { data_type },
+            property_type: PropertyType::Scalar(data_type),
         }
     }
 
@@ -175,15 +175,11 @@ impl PlyHeader {
                     "Unexpected end of file".to_string(),
                 ));
             }
-            let line_content = line.trim();
-            if line_content.is_empty() {
-                continue;
-            }
-            if line_content == "end_header" {
+
+            if line == "end_header\n" {
                 break;
             }
-
-            let parts: Vec<&str> = line_content.split_whitespace().collect();
+            let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.is_empty() {
                 continue;
             }
@@ -258,14 +254,12 @@ impl PlyHeader {
                         let name = parts[2].to_string();
 
                         element.properties.push(PlyProperty {
-                            property_type: PropertyType::Scalar { data_type },
+                            property_type: PropertyType::Scalar(data_type),
                             name,
                         });
                     }
                 }
-                _ => {
-                    comments.push(line_content.to_string());
-                }
+                _ => {}
             }
         }
         if let Some(element) = current_element {
