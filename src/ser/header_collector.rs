@@ -1,5 +1,6 @@
 use crate::{PlyError, PlyFormat, ScalarType};
 use serde::{
+    de::Error,
     ser::{Impossible, SerializeMap, SerializeSeq, SerializeStruct},
     Serialize, Serializer,
 };
@@ -17,8 +18,7 @@ impl Recursion {
         match self {
             Recursion::Header => Ok(Recursion::Element),
             Recursion::Element => Ok(Recursion::Row),
-            // TODO: More specific error.
-            Recursion::Row => Err(PlyError::InvalidStructure),
+            Recursion::Row => Err(PlyError::custom("Invalid ply structure")),
         }
     }
 }
@@ -231,75 +231,75 @@ impl<'a, W: Write> Serializer for &'a mut HeaderCollector<W> {
     type SerializeSeq = serde::ser::Impossible<(), PlyError>;
 
     fn serialize_bool(self, _v: bool) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_i8(self, _v: i8) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_i16(self, _v: i16) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_i32(self, _v: i32) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_i64(self, _v: i64) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_u8(self, _v: u8) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_u16(self, _v: u16) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_u32(self, _v: u32) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_u64(self, _v: u64) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_f32(self, _v: f32) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_f64(self, _v: f64) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_char(self, _v: char) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_str(self, _v: &str) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_bytes(self, _v: &[u8]) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_none(self) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_some<T: Serialize + ?Sized>(self, _value: &T) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_unit(self) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_unit_struct(self, _name: &'static str) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_unit_variant(
@@ -308,7 +308,7 @@ impl<'a, W: Write> Serializer for &'a mut HeaderCollector<W> {
         _variant_index: u32,
         _variant: &'static str,
     ) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_newtype_struct<T: Serialize + ?Sized>(
@@ -316,7 +316,7 @@ impl<'a, W: Write> Serializer for &'a mut HeaderCollector<W> {
         _name: &'static str,
         _value: &T,
     ) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_newtype_variant<T: Serialize + ?Sized>(
@@ -326,15 +326,15 @@ impl<'a, W: Write> Serializer for &'a mut HeaderCollector<W> {
         _variant: &'static str,
         _value: &T,
     ) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_tuple_struct(
@@ -342,7 +342,7 @@ impl<'a, W: Write> Serializer for &'a mut HeaderCollector<W> {
         _name: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeTupleStruct, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_tuple_variant(
@@ -352,7 +352,7 @@ impl<'a, W: Write> Serializer for &'a mut HeaderCollector<W> {
         _variant: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeTupleVariant, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Invalid ply structure"))
     }
 
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
@@ -477,7 +477,7 @@ impl<'a, W: Write> Serializer for PropertyCollector<'a, W> {
     type SerializeStructVariant = serde::ser::Impossible<(), PlyError>;
 
     fn serialize_bool(self, _v: bool) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::UnsupportedType("bool".to_string()))
+        Err(PlyError::custom("Bool properties are not supported"))
     }
 
     fn serialize_i8(self, _v: i8) -> Result<Self::Ok, Self::Error> {
@@ -496,7 +496,7 @@ impl<'a, W: Write> Serializer for PropertyCollector<'a, W> {
     }
 
     fn serialize_i64(self, _v: i64) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::UnsupportedType("i64".to_string()))
+        Err(PlyError::custom("i64 properties are not supported"))
     }
 
     fn serialize_u8(self, _v: u8) -> Result<Self::Ok, Self::Error> {
@@ -515,7 +515,7 @@ impl<'a, W: Write> Serializer for PropertyCollector<'a, W> {
     }
 
     fn serialize_u64(self, _v: u64) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::UnsupportedType("u64".to_string()))
+        Err(PlyError::custom("u64 properties are not supported"))
     }
 
     fn serialize_f32(self, _v: f32) -> Result<Self::Ok, Self::Error> {
@@ -529,19 +529,19 @@ impl<'a, W: Write> Serializer for PropertyCollector<'a, W> {
     }
 
     fn serialize_char(self, _v: char) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::UnsupportedType("char".to_string()))
+        Err(PlyError::custom("Char properties are not supported"))
     }
 
     fn serialize_str(self, _v: &str) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::UnsupportedType("str".to_string()))
+        Err(PlyError::custom("Str properties are not supported"))
     }
 
     fn serialize_bytes(self, _v: &[u8]) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::UnsupportedType("bytes".to_string()))
+        Err(PlyError::custom("Bytes properties are not supported"))
     }
 
     fn serialize_none(self) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::UnsupportedType("none".to_string()))
+        Err(PlyError::custom("Option properties are not supported"))
     }
 
     fn serialize_some<T>(self, value: &T) -> Result<Self::Ok, Self::Error>
@@ -552,11 +552,11 @@ impl<'a, W: Write> Serializer for PropertyCollector<'a, W> {
     }
 
     fn serialize_unit(self) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::UnsupportedType("unit".to_string()))
+        Err(PlyError::custom("Unit values not supported"))
     }
 
     fn serialize_unit_struct(self, _name: &'static str) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::UnsupportedType("unit_struct".to_string()))
+        Err(PlyError::custom("Unit structs are not supported"))
     }
 
     fn serialize_unit_variant(
@@ -565,7 +565,7 @@ impl<'a, W: Write> Serializer for PropertyCollector<'a, W> {
         _variant_index: u32,
         _variant: &'static str,
     ) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::UnsupportedType("unit_variant".to_string()))
+        Err(PlyError::custom("Unit variant values not supported"))
     }
 
     fn serialize_newtype_struct<T>(
@@ -589,14 +589,15 @@ impl<'a, W: Write> Serializer for PropertyCollector<'a, W> {
     where
         T: Serialize + ?Sized,
     {
-        Err(PlyError::UnsupportedType("newtype_variant".to_string()))
+        // TODO: Should support these.
+        Err(PlyError::custom("Newtype structs are not supported"))
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
         if self.recursion == Recursion::Element {
             // For elements, this is a list of rows.
             let Some(len) = len else {
-                return Err(PlyError::InvalidStructure);
+                return Err(PlyError::custom("Lists must have known length"));
             };
             writeln!(self.parent.writer, "element {} {}", self.property_name, len)?;
         }
@@ -725,7 +726,7 @@ impl<W: Write> Serializer for &mut ListPropertyCollector<'_, W> {
     type SerializeStructVariant = Impossible<(), PlyError>;
 
     fn serialize_bool(self, _v: bool) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Bool properties are not supported"))
     }
 
     fn serialize_i8(self, _v: i8) -> Result<Self::Ok, Self::Error> {
@@ -741,7 +742,7 @@ impl<W: Write> Serializer for &mut ListPropertyCollector<'_, W> {
     }
 
     fn serialize_i64(self, _v: i64) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::UnsupportedType("i64".to_string()))
+        Err(PlyError::custom("i64 properties are not supported"))
     }
 
     fn serialize_u8(self, _v: u8) -> Result<Self::Ok, Self::Error> {
@@ -757,7 +758,7 @@ impl<W: Write> Serializer for &mut ListPropertyCollector<'_, W> {
     }
 
     fn serialize_u64(self, _v: u64) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::UnsupportedType("u64".to_string()))
+        Err(PlyError::custom("u64 properties are not supported"))
     }
 
     fn serialize_f32(self, _v: f32) -> Result<Self::Ok, Self::Error> {
@@ -769,26 +770,26 @@ impl<W: Write> Serializer for &mut ListPropertyCollector<'_, W> {
     }
 
     fn serialize_char(self, _v: char) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::UnsupportedType("char".to_string()))
+        Err(PlyError::custom("Char properties are not supported"))
     }
 
     fn serialize_str(self, _v: &str) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::UnsupportedType("str".to_string()))
+        Err(PlyError::custom("Str properties are not supported"))
     }
 
     fn serialize_bytes(self, _v: &[u8]) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::UnsupportedType("bytes".to_string()))
+        Err(PlyError::custom("Bytes properties are not supported"))
     }
 
     fn serialize_none(self) -> Result<Self::Ok, Self::Error> {
-        Err(PlyError::UnsupportedType("option".to_string()))
+        Err(PlyError::custom("Option properties are not supported"))
     }
 
     fn serialize_some<T>(self, _value: &T) -> Result<Self::Ok, Self::Error>
     where
         T: ?Sized + Serialize,
     {
-        Err(PlyError::UnsupportedType("option".to_string()))
+        Err(PlyError::custom("Option properties are not supported"))
     }
 
     fn serialize_unit(self) -> Result<Self::Ok, Self::Error> {

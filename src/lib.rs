@@ -10,6 +10,7 @@ pub use ser::{to_bytes, to_writer};
 pub use de::chunked::ChunkPlyFile;
 
 pub use de::PlyFileDeserializer;
+use serde::de::Error;
 
 use std::io::BufRead;
 
@@ -56,18 +57,7 @@ impl ScalarType {
             "uint" | "uint32" => Ok(ScalarType::U32),
             "float" | "float32" => Ok(ScalarType::F32),
             "double" | "float64" => Ok(ScalarType::F64),
-            _ => Err(PlyError::UnsupportedType(format!(
-                "Unknown scalar type: {s}"
-            ))),
-        }
-    }
-
-    pub fn size_bytes(&self) -> usize {
-        match self {
-            ScalarType::I8 | ScalarType::U8 => 1,
-            ScalarType::I16 | ScalarType::U16 => 2,
-            ScalarType::I32 | ScalarType::U32 | ScalarType::F32 => 4,
-            ScalarType::F64 => 8,
+            _ => Err(PlyError::custom(format!("Unknown scalar type: {s}"))),
         }
     }
 }
@@ -112,27 +102,6 @@ pub struct PlyProperty {
     property_type: PropertyType,
 }
 
-impl PlyProperty {
-    /// Create a scalar property
-    pub fn scalar(name: String, data_type: ScalarType) -> Self {
-        Self {
-            name,
-            property_type: PropertyType::Scalar(data_type),
-        }
-    }
-
-    /// Create a list property
-    pub fn list(name: String, count_type: ScalarType, data_type: ScalarType) -> Self {
-        Self {
-            name,
-            property_type: PropertyType::List {
-                count_type,
-                data_type,
-            },
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct ElementDef {
     pub name: String,
@@ -154,9 +123,7 @@ impl PlyHeader {
         let mut line = String::new();
         reader.read_line(&mut line)?;
         if line.trim() != "ply" {
-            return Err(PlyError::UnsupportedType(
-                "File must start with 'ply'".to_string(),
-            ));
+            return Err(PlyError::custom("File must start with 'ply'"));
         }
 
         let mut format = None;
@@ -170,9 +137,7 @@ impl PlyHeader {
             let mut line = String::new();
             let bytes_read = reader.read_line(&mut line)?;
             if bytes_read == 0 {
-                return Err(PlyError::UnsupportedType(
-                    "Unexpected end of file".to_string(),
-                ));
+                return Err(PlyError::custom("Unexpected end of file"));
             }
 
             if line == "end_header\n" {
@@ -185,13 +150,13 @@ impl PlyHeader {
             match parts[0] {
                 "format" => {
                     if parts.len() < 3 {
-                        return Err(PlyError::UnsupportedType("Invalid format line".to_string()));
+                        return Err(PlyError::custom("Invalid format line"));
                     }
                     format = Some(match parts[1] {
                         "ascii" => PlyFormat::Ascii,
                         "binary_little_endian" => PlyFormat::BinaryLittleEndian,
                         "binary_big_endian" => PlyFormat::BinaryBigEndian,
-                        _ => return Err(PlyError::UnsupportedType(parts[1].to_string())),
+                        _ => return Err(PlyError::custom(parts[1])),
                     });
                     version = parts[2].to_string();
                 }
@@ -203,9 +168,7 @@ impl PlyHeader {
                 }
                 "element" => {
                     if parts.len() < 3 {
-                        return Err(PlyError::UnsupportedType(
-                            "Invalid element line".to_string(),
-                        ));
+                        return Err(PlyError::custom("Invalid element line"));
                     }
 
                     if let Some(element) = current_element.take() {
@@ -214,7 +177,7 @@ impl PlyHeader {
 
                     let name = parts[1].to_string();
                     let count = parts[2].parse::<usize>().map_err(|_| {
-                        PlyError::UnsupportedType(format!("Invalid element count: {}", parts[2]))
+                        PlyError::custom(format!("Invalid element count: {}", parts[2]))
                     })?;
 
                     current_element = Some(ElementDef {
@@ -224,22 +187,18 @@ impl PlyHeader {
                     });
                 }
                 "property" => {
-                    let element = current_element.as_mut().ok_or_else(|| {
-                        PlyError::UnsupportedType("Property without element".to_string())
-                    })?;
+                    let element = current_element
+                        .as_mut()
+                        .ok_or_else(|| PlyError::custom("Property without element"))?;
 
                     if parts.len() < 3 {
-                        return Err(PlyError::UnsupportedType(
-                            "Invalid property line".to_string(),
-                        ));
+                        return Err(PlyError::custom("Invalid property line"));
                     }
 
                     if parts[1] == "list" {
                         // List property: property list <count_type> <data_type> <name>
                         if parts.len() < 5 {
-                            return Err(PlyError::UnsupportedType(
-                                "Invalid list property line".to_string(),
-                            ));
+                            return Err(PlyError::custom("Invalid list property line"));
                         }
                         let count_type = ScalarType::parse(parts[2])?;
                         let data_type = ScalarType::parse(parts[3])?;
@@ -268,8 +227,7 @@ impl PlyHeader {
         if let Some(element) = current_element {
             elements.push(element);
         }
-        let format = format
-            .ok_or_else(|| PlyError::UnsupportedType("Missing format specification".to_string()))?;
+        let format = format.ok_or_else(|| PlyError::custom("Missing format specification"))?;
         Ok(PlyHeader {
             format,
             version,

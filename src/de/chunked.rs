@@ -6,7 +6,10 @@ use crate::{
     PlyError, PlyFormat, PlyHeader,
 };
 use byteorder::{BigEndian, LittleEndian};
-use serde::{de::SeqAccess, Deserialize, Deserializer};
+use serde::{
+    de::{Error, SeqAccess},
+    Deserialize, Deserializer,
+};
 use std::io::Cursor;
 
 pub struct ChunkPlyFile {
@@ -81,7 +84,7 @@ impl<'de> Deserializer<'de> for &'_ mut ChunkPlyFile {
 
         // Check if we've moved past all elements, if so error that we've run out of elements.
         if self.current_element_index >= header.elements.len() {
-            return Err(PlyError::MissingElement);
+            return Err(PlyError::custom("Ran out of elements"));
         }
 
         let elem_def = &header.elements[self.current_element_index];
@@ -159,7 +162,7 @@ impl<'de> SeqAccess<'de> for EmptySeq {
 
 struct ChunkPlyFileSeqVisitor<'a, D: AsRef<[u8]>, S: ScalarReader> {
     remaining: usize,
-    row: RowDeserializer<'a, &'a mut Cursor<D>, S>,
+    row: RowDeserializer<'a, Cursor<D>, S>,
 }
 
 impl<'de, D: AsRef<[u8]>, S: ScalarReader> SeqAccess<'de>
@@ -182,7 +185,7 @@ impl<'de, D: AsRef<[u8]>, S: ScalarReader> SeqAccess<'de>
                 Ok(Some(element))
             }
             // Not enough data for this element, stop here
-            Err(PlyError::Io(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+            Err(e) if e.0.kind() == std::io::ErrorKind::UnexpectedEof => {
                 self.row.reader.set_position(last_pos);
                 Ok(None)
             }

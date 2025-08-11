@@ -17,7 +17,7 @@ pub(crate) trait ScalarReader {
     fn read_u16(reader: impl Read) -> Result<u16, std::io::Error>;
     fn read_i32(reader: impl Read) -> Result<i32, std::io::Error>;
     fn read_u32(reader: impl Read) -> Result<u32, std::io::Error>;
-    fn read_f32(reader: impl Read) -> Result<f32, std::io::Error>;
+    fn read_f32(data: impl Read) -> Result<f32, std::io::Error>;
     fn read_f64(reader: impl Read) -> Result<f64, std::io::Error>;
 }
 

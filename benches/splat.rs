@@ -170,7 +170,7 @@ fn generate_test_data(num_splats: usize) -> Vec<u8> {
 }
 
 fn bench_gaussian_splat(c: &mut Criterion) {
-    let num_splats = 10000;
+    let num_splats = 100000;
     let test_data = generate_test_data(num_splats);
 
     let mut group = c.benchmark_group("gaussian_splat");

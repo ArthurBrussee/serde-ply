@@ -1,25 +1,23 @@
 use crate::{de::val_reader::ScalarReader, PlyError, PlyProperty, PropertyType, ScalarType};
 use serde::{
-    de::{value::BytesDeserializer, DeserializeSeed, MapAccess, SeqAccess, Visitor},
+    de::{value::BytesDeserializer, DeserializeSeed, Error, MapAccess, SeqAccess, Visitor},
     Deserializer,
 };
 use std::{io::Read, marker::PhantomData};
 
 pub(crate) struct RowDeserializer<'a, R: Read, S: ScalarReader> {
-    pub reader: R,
+    pub reader: &'a mut R,
     pub properties: &'a [PlyProperty],
-    pub current_property: usize,
-    cur_prop: &'a PropertyType,
+    pub current_property: u32,
     _marker: PhantomData<S>,
 }
 
 impl<'a, R: Read, S: ScalarReader> RowDeserializer<'a, R, S> {
-    pub fn new(reader: R, properties: &'a [PlyProperty]) -> Self {
+    pub fn new(reader: &'a mut R, properties: &'a [PlyProperty]) -> Self {
         Self {
             current_property: 0,
             reader,
             properties,
-            cur_prop: &PropertyType::Scalar(ScalarType::U32), // Dummy value.
             _marker: PhantomData,
         }
     }
@@ -32,7 +30,7 @@ impl<'de, R: Read, S: ScalarReader> Deserializer<'de> for &mut RowDeserializer<'
     where
         V: Visitor<'de>,
     {
-        Err(PlyError::InvalidStructure)
+        Err(PlyError::custom("Rows must be deserialized as maps"))
     }
 
     fn deserialize_struct<V>(
@@ -70,46 +68,51 @@ impl<'de, R: Read, S: ScalarReader> MapAccess<'de> for RowDeserializer<'_, R, S>
     where
         K: DeserializeSeed<'de>,
     {
-        let Some(prop) = self.properties.get(self.current_property) else {
+        let Some(prop) = self.properties.get(self.current_property as usize) else {
             return Ok(None);
         };
-        self.cur_prop = &prop.property_type;
         seed.deserialize(BytesDeserializer::new(prop.name.as_bytes()))
             .map(Some)
     }
 
+    #[inline]
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
     where
         V: DeserializeSeed<'de>,
     {
-        self.current_property += 1;
-
-        match self.cur_prop {
-            PropertyType::Scalar(data_type) => seed.deserialize(ScalarDeserializer {
-                reader: &mut self.reader,
-                data_type: *data_type,
-                _marker: PhantomData::<S>,
-            }),
+        // TODO: Hope the bounds check here gets optimzed out (next_key_seed already checks).
+        match self.properties[self.current_property as usize].property_type {
+            PropertyType::Scalar(data_type) => {
+                self.current_property += 1;
+                seed.deserialize(ScalarDeserializer {
+                    reader: &mut self.reader,
+                    data_type,
+                    _marker: PhantomData::<S>,
+                })
+            }
             PropertyType::List {
                 count_type,
                 data_type,
-            } => seed.deserialize(ListDeserializer {
-                reader: &mut self.reader,
-                count_type: *count_type,
-                data_type: *data_type,
-                _marker: PhantomData::<S>,
-            }),
+            } => {
+                self.current_property += 1;
+                seed.deserialize(ListDeserializer {
+                    reader: &mut self.reader,
+                    count_type,
+                    data_type,
+                    _marker: PhantomData::<S>,
+                })
+            }
         }
     }
 }
 
-struct ScalarDeserializer<R: Read, S: ScalarReader> {
-    reader: R,
+struct ScalarDeserializer<'a, R: Read, S: ScalarReader> {
+    reader: &'a mut R,
     data_type: ScalarType,
     _marker: PhantomData<S>,
 }
 
-impl<'de, R: Read, S: ScalarReader> Deserializer<'de> for ScalarDeserializer<R, S> {
+impl<'de, R: Read, S: ScalarReader> Deserializer<'de> for ScalarDeserializer<'_, R, S> {
     type Error = PlyError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -178,8 +181,8 @@ impl<'de, R: Read, S: ScalarReader> Deserializer<'de> for ListDeserializer<R, S>
             ScalarType::U16 => S::read_u16(&mut self.reader)? as usize,
             ScalarType::I32 => S::read_i32(&mut self.reader)? as usize,
             ScalarType::U32 => S::read_u32(&mut self.reader)? as usize,
-            ScalarType::F32 => S::read_f32(&mut self.reader)? as usize,
-            ScalarType::F64 => S::read_f64(&mut self.reader)? as usize,
+            ScalarType::F32 => return Err(PlyError::custom("List count cannot be a float")),
+            ScalarType::F64 => return Err(PlyError::custom("List count cannot be a float")),
         };
         visitor.visit_seq(ListSeqAccess {
             reader: &mut self.reader,

@@ -35,8 +35,6 @@ harness = false
 name = "splat"
 harness = false
 
-[lints.rust]
-unsafe_code = "forbid"
 
 [profile.profiling]
 inherits = "release"

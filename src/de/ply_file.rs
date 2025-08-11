@@ -148,7 +148,7 @@ pub(crate) struct ElementSeqDeserializer<'a, R: Read, S: ScalarReader> {
 }
 
 impl<'a, R: Read, S: ScalarReader> ElementSeqDeserializer<'a, R, S> {
-    pub(crate) fn new(properties: &'a [PlyProperty], reader: R, row_count: usize) -> Self {
+    pub(crate) fn new(properties: &'a [PlyProperty], reader: &'a mut R, row_count: usize) -> Self {
         Self {
             row: RowDeserializer::new(reader, properties),
             remaining: row_count,
