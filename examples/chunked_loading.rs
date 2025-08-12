@@ -18,9 +18,7 @@ struct Mesh {
     faces: Vec<Face>,
 }
 
-fn main() -> Result<(), PlyError> {
-    let vertex_count = 64;
-
+fn dummy_data(vertex_count: usize) -> Vec<u8> {
     let header = format!(
         "ply\nformat binary_little_endian 1.0\nelement vertex {vertex_count}\nproperty float x\nproperty float y\nproperty float z\nelement face 1\nproperty list uchar uint vertex_indices\nend_header\n"
     );
@@ -36,10 +34,16 @@ fn main() -> Result<(), PlyError> {
         }
     }
 
+    // Add face data
     binary_data.extend_from_slice(&[3u8; 1]);
     binary_data.extend_from_slice(&[0u8; 3 * 4]);
+    binary_data
+}
 
-    let chunk_size = 15;
+fn main() -> Result<(), PlyError> {
+    let vertex_count = 64;
+
+    let binary_data = dummy_data(vertex_count);
 
     // We're decoding in chunks but want to make one big array of vertices without allocating smaller sub arrays.
     let mut mesh = Mesh {
@@ -48,6 +52,7 @@ fn main() -> Result<(), PlyError> {
     };
 
     let mut file = ChunkPlyFile::new();
+    let chunk_size = 15;
 
     for chunk in binary_data.chunks(chunk_size) {
         // Feed in some data. This might come from eg. an async source.
