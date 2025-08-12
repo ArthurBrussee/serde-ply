@@ -426,6 +426,7 @@ impl<W: Write> SerializeMap for HeaderMapCollector<'_, W> {
             parent: self.parent,
             property_name: &self.cur_key,
             recursion: self.recursion.next()?,
+            count_type: ScalarType::U8,
         })
     }
 
@@ -454,6 +455,7 @@ impl<W: Write> SerializeStruct for HeaderStructCollector<'_, W> {
             parent: self.parent,
             property_name: key,
             recursion: self.recursion.next()?,
+            count_type: ScalarType::U8,
         })
     }
 
@@ -469,6 +471,7 @@ struct PropertyCollector<'a, W: Write> {
     parent: &'a mut HeaderCollector<W>,
     property_name: &'a str,
     recursion: Recursion,
+    count_type: ScalarType,
 }
 
 impl<'a, W: Write> Serializer for PropertyCollector<'a, W> {
@@ -575,13 +578,20 @@ impl<'a, W: Write> Serializer for PropertyCollector<'a, W> {
     }
 
     fn serialize_newtype_struct<T>(
-        self,
-        _name: &'static str,
+        mut self,
+        name: &'static str,
         value: &T,
     ) -> Result<Self::Ok, Self::Error>
     where
         T: Serialize + ?Sized,
     {
+        // Check if this is a ListCount wrapper type
+        self.count_type = match name {
+            "ListCountU8" => ScalarType::U8,
+            "ListCountU16" => ScalarType::U16,
+            "ListCountU32" => ScalarType::U32,
+            _ => ScalarType::U8,
+        };
         value.serialize(self)
     }
 
@@ -614,6 +624,7 @@ impl<'a, W: Write> Serializer for PropertyCollector<'a, W> {
             recursion: self.recursion,
             prop_name: self.property_name,
             active: true,
+            count_type: self.count_type,
         })
     }
 
@@ -671,9 +682,10 @@ impl<'a, W: Write> Serializer for PropertyCollector<'a, W> {
 
 struct ListPropertyCollector<'a, W: Write> {
     writer: &'a mut W,
-    prop_name: &'a str,
     recursion: Recursion,
+    prop_name: &'a str,
     active: bool,
+    count_type: ScalarType,
 }
 
 impl<W: Write> SerializeSeq for ListPropertyCollector<'_, W> {
@@ -710,8 +722,8 @@ impl<W: Write> ListPropertyCollector<'_, W> {
     fn write_list_prop(&mut self, t: ScalarType) -> Result<(), PlyError> {
         Ok(writeln!(
             self.writer,
-            "property list uchar {} {}",
-            t, self.prop_name
+            "property list {} {} {}",
+            self.count_type, t, self.prop_name
         )?)
     }
 }

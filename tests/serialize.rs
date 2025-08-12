@@ -192,3 +192,60 @@ fn roundtrip_large_list() {
 
     assert_eq!(faces, parsed);
 }
+
+#[test]
+fn test_list_count_types() {
+    use serde_ply::{ListCountU16, ListCountU32};
+
+    #[derive(Serialize, Deserialize, Debug)]
+    struct LargeListTest {
+        // Standard list (u8 count, max 255 elements)
+        small_list: Vec<u32>,
+        // Medium list (u16 count, max 65535 elements)
+        medium_list: ListCountU16<Vec<u32>>,
+        // Large list (u32 count, max ~4 billion elements)
+        large_list: ListCountU32<Vec<u32>>,
+    }
+
+    #[derive(Serialize, Deserialize, Debug)]
+    struct LargeListMesh {
+        face: Vec<LargeListTest>,
+    }
+
+    let test_data = LargeListMesh {
+        face: vec![LargeListTest {
+            small_list: vec![1, 2, 3],
+            medium_list: ListCountU16::from(vec![4, 5, 6, 7]),
+            large_list: ListCountU32::from(vec![8, 9, 10, 11, 12]),
+        }],
+    };
+
+    // Test ASCII format
+    let bytes = to_bytes(&test_data, PlyFormat::Ascii, vec![]).unwrap();
+    let header_str = String::from_utf8_lossy(&bytes);
+
+    // Verify the header contains the correct count types
+    assert!(header_str.contains("property list uint8 uint32 small_list"));
+    assert!(header_str.contains("property list uint16 uint32 medium_list"));
+    assert!(header_str.contains("property list uint32 uint32 large_list"));
+
+    let cursor = Cursor::new(bytes);
+    let parsed: LargeListMesh = from_reader(cursor).unwrap();
+    assert_eq!(test_data.face[0].small_list, parsed.face[0].small_list);
+    assert_eq!(
+        test_data.face[0].medium_list.0,
+        parsed.face[0].medium_list.0
+    );
+    assert_eq!(test_data.face[0].large_list.0, parsed.face[0].large_list.0);
+
+    // Test binary format
+    let bytes = to_bytes(&test_data, PlyFormat::BinaryLittleEndian, vec![]).unwrap();
+    let cursor = Cursor::new(bytes);
+    let parsed: LargeListMesh = from_reader(cursor).unwrap();
+    assert_eq!(test_data.face[0].small_list, parsed.face[0].small_list);
+    assert_eq!(
+        test_data.face[0].medium_list.0,
+        parsed.face[0].medium_list.0
+    );
+    assert_eq!(test_data.face[0].large_list.0, parsed.face[0].large_list.0);
+}

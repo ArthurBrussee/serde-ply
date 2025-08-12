@@ -255,3 +255,112 @@ impl PlyHeader {
         self.elem_defs.iter().any(|e| e.name == name)
     }
 }
+
+/// Newtype wrappers for PLY list properties with custom count types.
+///
+/// These types allow you to specify the count type for PLY list properties.
+///
+/// # Examples
+///
+/// ```rust
+/// use serde::{Deserialize, Serialize};
+/// use serde_ply::{ListCountU16, ListCountU32};
+///
+/// #[derive(Deserialize, Serialize)]
+/// struct Face {
+///     // Standard list (u8 count, max 255 elements)
+///     small_indices: Vec<u32>,
+///
+///     // Medium list (u16 count, max 65535 elements)
+///     medium_indices: ListCountU16<Vec<u32>>,
+///
+///     // Large list (u32 count, max ~4 billion elements)
+///     large_indices: ListCountU32<Vec<u32>>,
+/// }
+/// ```
+/// PLY list with u8 count type (max 255 elements).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListCountU8<T>(pub T);
+
+/// PLY list with u16 count type (max 65535 elements).
+#[derive(Debug)]
+pub struct ListCountU16<T>(pub T);
+
+/// PLY list with u32 count type (max ~4 billion elements).
+#[derive(Debug)]
+pub struct ListCountU32<T>(pub T);
+
+/// Helper trait to identify list count types and their corresponding scalar types.
+pub trait ListCountType {
+    /// The scalar type used for the count field in PLY format.
+    fn count_scalar_type() -> ScalarType;
+}
+
+impl<T> ListCountType for ListCountU8<T> {
+    fn count_scalar_type() -> ScalarType {
+        ScalarType::U8
+    }
+}
+
+impl<T> ListCountType for ListCountU16<T> {
+    fn count_scalar_type() -> ScalarType {
+        ScalarType::U16
+    }
+}
+
+impl<T> ListCountType for ListCountU32<T> {
+    fn count_scalar_type() -> ScalarType {
+        ScalarType::U32
+    }
+}
+
+// Implement common traits for all ListCount types
+macro_rules! impl_list_count_traits {
+    ($wrapper:ident) => {
+        impl<T> From<T> for $wrapper<T> {
+            fn from(inner: T) -> Self {
+                $wrapper(inner)
+            }
+        }
+        impl<T> std::ops::Deref for $wrapper<T> {
+            type Target = T;
+            fn deref(&self) -> &Self::Target {
+                &self.0
+            }
+        }
+
+        impl<T> std::ops::DerefMut for $wrapper<T> {
+            fn deref_mut(&mut self) -> &mut Self::Target {
+                &mut self.0
+            }
+        }
+
+        impl<T> serde::Serialize for $wrapper<T>
+        where
+            T: serde::Serialize,
+        {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                serializer.serialize_newtype_struct(stringify!($wrapper), &self.0)
+            }
+        }
+
+        impl<'de, T> serde::Deserialize<'de> for $wrapper<T>
+        where
+            T: serde::Deserialize<'de>,
+        {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                T::deserialize(deserializer).map($wrapper)
+            }
+        }
+    };
+}
+
+impl_list_count_traits!(ListCountU8);
+impl_list_count_traits!(ListCountU16);
+impl_list_count_traits!(ListCountU32);

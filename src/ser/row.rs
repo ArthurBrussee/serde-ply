@@ -217,6 +217,7 @@ impl<W: ScalarWriter> SerializeMap for RowMapSerializer<'_, W> {
     {
         value.serialize(PropertySerializer {
             val_writer: &mut self.parent.val_writer,
+            count_type: ScalarType::U8,
         })?;
         Ok(())
     }
@@ -237,6 +238,7 @@ impl<W: ScalarWriter> SerializeStruct for RowMapSerializer<'_, W> {
     {
         value.serialize(PropertySerializer {
             val_writer: &mut self.parent.val_writer,
+            count_type: ScalarType::U8,
         })
     }
 
@@ -248,12 +250,13 @@ impl<W: ScalarWriter> SerializeStruct for RowMapSerializer<'_, W> {
 
 struct PropertySerializer<'a, W: ScalarWriter> {
     val_writer: &'a mut W,
+    count_type: ScalarType,
 }
 
 impl<'a, W: ScalarWriter> Serializer for PropertySerializer<'a, W> {
     type Ok = ();
     type Error = PlyError;
-    type SerializeSeq = ListSerializer<'a, W>;
+    type SerializeSeq = ListValuesSerializer<'a, W>;
     type SerializeTuple = serde::ser::Impossible<(), PlyError>;
     type SerializeTupleStruct = serde::ser::Impossible<(), PlyError>;
     type SerializeTupleVariant = serde::ser::Impossible<(), PlyError>;
@@ -346,13 +349,20 @@ impl<'a, W: ScalarWriter> Serializer for PropertySerializer<'a, W> {
     }
 
     fn serialize_newtype_struct<T>(
-        self,
-        _name: &'static str,
+        mut self,
+        name: &'static str,
         value: &T,
     ) -> Result<Self::Ok, Self::Error>
     where
         T: Serialize + ?Sized,
     {
+        // Check if this is a ListCount wrapper type
+        self.count_type = match name {
+            "ListCountU8" => ScalarType::U8,
+            "ListCountU16" => ScalarType::U16,
+            "ListCountU32" => ScalarType::U32,
+            _ => ScalarType::U8,
+        };
         value.serialize(self)
     }
 
@@ -373,17 +383,27 @@ impl<'a, W: ScalarWriter> Serializer for PropertySerializer<'a, W> {
         let count =
             len.ok_or_else(|| PlyError::custom("Unsupported type: sequence without known length"))?;
 
-        if count > 255 {
-            return Err(PlyError::custom(
-                "Unsupported type: sequence length exceeds maximum",
-            ));
+        // Check if count fits in the specified count type
+        let max_count = match self.count_type {
+            ScalarType::I8 => i8::MAX as usize,
+            ScalarType::U8 => u8::MAX as usize,
+            ScalarType::I16 => i16::MAX as usize,
+            ScalarType::U16 => u16::MAX as usize,
+            ScalarType::I32 => i32::MAX as usize,
+            ScalarType::U32 => u32::MAX as usize,
+            ScalarType::F32 => u32::MAX as usize,
+            ScalarType::F64 => u32::MAX as usize,
+        };
+
+        if count > max_count {
+            return Err(PlyError::custom(format!(
+                "List length {} exceeds maximum for {:?} count type ({})",
+                count, self.count_type, max_count
+            )));
         }
 
-        // TODO: How to support this properly?
-        let count_type = ScalarType::U8;
-
         // Write the count
-        match count_type {
+        match self.count_type {
             ScalarType::I8 => self.val_writer.write_i8(count as i8)?,
             ScalarType::U8 => self.val_writer.write_u8(count as u8)?,
             ScalarType::I16 => self.val_writer.write_i16(count as i16)?,
@@ -394,7 +414,7 @@ impl<'a, W: ScalarWriter> Serializer for PropertySerializer<'a, W> {
             ScalarType::F64 => self.val_writer.write_f64(count as f64)?,
         }
 
-        Ok(ListSerializer {
+        Ok(ListValuesSerializer {
             val_writer: self.val_writer,
         })
     }
@@ -444,11 +464,11 @@ impl<'a, W: ScalarWriter> Serializer for PropertySerializer<'a, W> {
     }
 }
 
-pub struct ListSerializer<'a, W: ScalarWriter> {
+pub struct ListValuesSerializer<'a, W: ScalarWriter> {
     val_writer: &'a mut W,
 }
 
-impl<W: ScalarWriter> SerializeSeq for ListSerializer<'_, W> {
+impl<W: ScalarWriter> SerializeSeq for ListValuesSerializer<'_, W> {
     type Ok = ();
     type Error = PlyError;
 
@@ -458,6 +478,7 @@ impl<W: ScalarWriter> SerializeSeq for ListSerializer<'_, W> {
     {
         value.serialize(PropertySerializer {
             val_writer: self.val_writer,
+            count_type: ScalarType::U8,
         })
     }
 
