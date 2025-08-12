@@ -9,109 +9,115 @@ struct GaussianSplat {
     x: f32,
     y: f32,
     z: f32,
-    rot_x: f32,
-    rot_y: f32,
-    rot_z: f32,
-    rot_w: f32,
-    scale_x: f32,
-    scale_y: f32,
-    scale_z: f32,
+
+    scale_0: f32,
+    scale_1: f32,
+    scale_2: f32,
+
+    opacity: f32,
+
+    rot_0: f32,
+    rot_1: f32,
+    rot_2: f32,
+    rot_3: f32,
+
     #[serde(default)]
-    sh_val_0: f32,
+    f_dc_0: f32,
     #[serde(default)]
-    sh_val_1: f32,
+    f_dc_1: f32,
     #[serde(default)]
-    sh_val_2: f32,
+    f_dc_2: f32,
+
     #[serde(default)]
-    sh_val_3: f32,
+    f_rest_0: f32,
     #[serde(default)]
-    sh_val_4: f32,
+    f_rest_1: f32,
     #[serde(default)]
-    sh_val_5: f32,
+    f_rest_2: f32,
     #[serde(default)]
-    sh_val_6: f32,
+    f_rest_3: f32,
     #[serde(default)]
-    sh_val_7: f32,
+    f_rest_4: f32,
     #[serde(default)]
-    sh_val_8: f32,
+    f_rest_5: f32,
     #[serde(default)]
-    sh_val_9: f32,
+    f_rest_6: f32,
     #[serde(default)]
-    sh_val_10: f32,
+    f_rest_7: f32,
     #[serde(default)]
-    sh_val_11: f32,
+    f_rest_8: f32,
     #[serde(default)]
-    sh_val_12: f32,
+    f_rest_9: f32,
     #[serde(default)]
-    sh_val_13: f32,
+    f_rest_10: f32,
     #[serde(default)]
-    sh_val_14: f32,
+    f_rest_11: f32,
     #[serde(default)]
-    sh_val_15: f32,
+    f_rest_12: f32,
     #[serde(default)]
-    sh_val_16: f32,
+    f_rest_13: f32,
     #[serde(default)]
-    sh_val_17: f32,
+    f_rest_14: f32,
     #[serde(default)]
-    sh_val_18: f32,
+    f_rest_15: f32,
     #[serde(default)]
-    sh_val_19: f32,
+    f_rest_16: f32,
     #[serde(default)]
-    sh_val_20: f32,
+    f_rest_17: f32,
     #[serde(default)]
-    sh_val_21: f32,
+    f_rest_18: f32,
     #[serde(default)]
-    sh_val_22: f32,
+    f_rest_19: f32,
     #[serde(default)]
-    sh_val_23: f32,
+    f_rest_20: f32,
     #[serde(default)]
-    sh_val_24: f32,
+    f_rest_21: f32,
     #[serde(default)]
-    sh_val_25: f32,
+    f_rest_22: f32,
     #[serde(default)]
-    sh_val_26: f32,
+    f_rest_23: f32,
     #[serde(default)]
-    sh_val_27: f32,
+    f_rest_24: f32,
     #[serde(default)]
-    sh_val_28: f32,
+    f_rest_25: f32,
     #[serde(default)]
-    sh_val_29: f32,
+    f_rest_26: f32,
     #[serde(default)]
-    sh_val_30: f32,
+    f_rest_27: f32,
     #[serde(default)]
-    sh_val_31: f32,
+    f_rest_28: f32,
     #[serde(default)]
-    sh_val_32: f32,
+    f_rest_29: f32,
     #[serde(default)]
-    sh_val_33: f32,
+    f_rest_30: f32,
     #[serde(default)]
-    sh_val_34: f32,
+    f_rest_31: f32,
     #[serde(default)]
-    sh_val_35: f32,
+    f_rest_32: f32,
     #[serde(default)]
-    sh_val_36: f32,
+    f_rest_33: f32,
     #[serde(default)]
-    sh_val_37: f32,
+    f_rest_34: f32,
     #[serde(default)]
-    sh_val_38: f32,
+    f_rest_35: f32,
     #[serde(default)]
-    sh_val_39: f32,
+    f_rest_36: f32,
     #[serde(default)]
-    sh_val_40: f32,
+    f_rest_37: f32,
     #[serde(default)]
-    sh_val_41: f32,
+    f_rest_38: f32,
     #[serde(default)]
-    sh_val_42: f32,
+    f_rest_39: f32,
     #[serde(default)]
-    sh_val_43: f32,
+    f_rest_40: f32,
     #[serde(default)]
-    sh_val_44: f32,
+    f_rest_41: f32,
     #[serde(default)]
-    sh_val_45: f32,
+    f_rest_42: f32,
     #[serde(default)]
-    sh_val_46: f32,
+    f_rest_43: f32,
     #[serde(default)]
-    sh_val_47: f32,
+    f_rest_44: f32,
 }
 
 #[derive(Deserialize)]
@@ -121,24 +127,76 @@ struct SplatPly {
 }
 
 fn generate_test_data(num_splats: usize) -> Vec<u8> {
-    let mut header = String::from("ply\nformat binary_little_endian 1.0\n");
-    header.push_str(&format!("element vertex {num_splats}\n"));
-    header.push_str("property float x\n");
-    header.push_str("property float y\n");
-    header.push_str("property float z\n");
-    header.push_str("property float rot_x\n");
-    header.push_str("property float rot_y\n");
-    header.push_str("property float rot_z\n");
-    header.push_str("property float rot_w\n");
-    header.push_str("property float scale_x\n");
-    header.push_str("property float scale_y\n");
-    header.push_str("property float scale_z\n");
-    for i in 0..48 {
-        header.push_str(&format!("property float sh_val_{i}\n"));
-    }
-    header.push_str("end_header\n");
+    let header = format!(
+        r#"ply
+format binary_little_endian 1.0
+comment Exported from Brush
+comment Vertical axis: y
+element vertex {num_splats}
+property float x
+property float y
+property float z
+property float scale_0
+property float scale_1
+property float scale_2
+property float opacity
+property float rot_0
+property float rot_1
+property float rot_2
+property float rot_3
+property float f_dc_0
+property float f_dc_1
+property float f_dc_2
+property float f_rest_0
+property float f_rest_1
+property float f_rest_2
+property float f_rest_3
+property float f_rest_4
+property float f_rest_5
+property float f_rest_6
+property float f_rest_7
+property float f_rest_8
+property float f_rest_9
+property float f_rest_10
+property float f_rest_11
+property float f_rest_12
+property float f_rest_13
+property float f_rest_14
+property float f_rest_15
+property float f_rest_16
+property float f_rest_17
+property float f_rest_18
+property float f_rest_19
+property float f_rest_20
+property float f_rest_21
+property float f_rest_22
+property float f_rest_23
+property float f_rest_24
+property float f_rest_25
+property float f_rest_26
+property float f_rest_27
+property float f_rest_28
+property float f_rest_29
+property float f_rest_30
+property float f_rest_31
+property float f_rest_32
+property float f_rest_33
+property float f_rest_34
+property float f_rest_35
+property float f_rest_36
+property float f_rest_37
+property float f_rest_38
+property float f_rest_39
+property float f_rest_40
+property float f_rest_41
+property float f_rest_42
+property float f_rest_43
+property float f_rest_44
+end_header
+"#
+    );
 
-    let mut data = header.into_bytes();
+    let mut data = header.as_bytes().to_vec();
 
     // Generate binary data
     for i in 0..num_splats {
@@ -147,16 +205,19 @@ fn generate_test_data(num_splats: usize) -> Vec<u8> {
         data.extend_from_slice(&(i_f * 0.1).to_le_bytes());
         data.extend_from_slice(&((i_f * 0.13) % 10.0).to_le_bytes());
         data.extend_from_slice(&((i_f * 0.17) % 10.0).to_le_bytes());
+        // Scale
+        data.extend_from_slice(&1.0f32.to_le_bytes());
+        data.extend_from_slice(&1.0f32.to_le_bytes());
+        data.extend_from_slice(&1.0f32.to_le_bytes());
+        // Opacity
+        data.extend_from_slice(&(0.5f32).to_le_bytes());
         // Rotation
         data.extend_from_slice(&0.707f32.to_le_bytes());
         data.extend_from_slice(&0.0f32.to_le_bytes());
         data.extend_from_slice(&0.0f32.to_le_bytes());
         data.extend_from_slice(&0.707f32.to_le_bytes());
-        // Scale
-        data.extend_from_slice(&1.0f32.to_le_bytes());
-        data.extend_from_slice(&1.0f32.to_le_bytes());
-        data.extend_from_slice(&1.0f32.to_le_bytes());
-        // SH coefficients
+
+        // SH DC & rest
         for j in 0..48 {
             let val = if j == 0 {
                 0.5

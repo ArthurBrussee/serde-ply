@@ -63,7 +63,7 @@ impl ChunkPlyFile {
 
     pub fn current_element(&mut self) -> Option<&ElementDef> {
         let ind = self.current_element_index;
-        self.header().map(|e| &e.elements[ind])
+        self.header().map(|e| &e.elem_defs[ind])
     }
 
     pub fn rows_done(&self) -> usize {
@@ -92,14 +92,14 @@ impl<'de> Deserializer<'de> for &'_ mut ChunkPlyFile {
         };
 
         // Check if we've moved past all elements, if so error that we've run out of elements.
-        if self.current_element_index >= header.elements.len() {
+        if self.current_element_index >= header.elem_defs.len() {
             return Err(PlyError::custom("Ran out of elements"));
         }
 
-        let elem_def = &header.elements[self.current_element_index];
+        let elem_def = &header.elem_defs[self.current_element_index];
 
         let mut cursor = Cursor::new(&self.data_buffer);
-        let remaining = elem_def.row_count - self.rows_parsed;
+        let remaining = elem_def.count - self.rows_parsed;
 
         let (res, rows_remaining) = match header.format {
             PlyFormat::Ascii => {
@@ -137,11 +137,11 @@ impl<'de> Deserializer<'de> for &'_ mut ChunkPlyFile {
             }
         };
 
-        self.rows_parsed = elem_def.row_count - rows_remaining;
+        self.rows_parsed = elem_def.count - rows_remaining;
         self.data_buffer.drain(..cursor.position() as usize);
 
         // If we've parsed all elements move to the next element.
-        if self.rows_parsed >= elem_def.row_count {
+        if self.rows_parsed >= elem_def.count {
             self.rows_parsed = 0;
             self.current_element_index += 1;
         }
@@ -219,6 +219,7 @@ pub struct RowVisitor<T, F: FnMut(T)> {
 }
 
 impl<T, F: FnMut(T)> RowVisitor<T, F> {
+    #[must_use = "Please call deserialize(&mut file) to actually deserialize data"]
     pub fn new(row_callback: F) -> Self {
         Self {
             row_callback,

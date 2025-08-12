@@ -98,22 +98,32 @@ enum PropertyType {
 
 #[derive(Debug, Clone)]
 pub struct PlyProperty {
-    name: String,
+    pub name: String,
     property_type: PropertyType,
 }
 
 #[derive(Debug, Clone)]
 pub struct ElementDef {
     pub name: String,
-    pub row_count: usize,
+    pub count: usize,
     pub properties: Vec<PlyProperty>,
+}
+
+impl ElementDef {
+    pub fn get_property(&self, name: &str) -> Option<&PlyProperty> {
+        self.properties.iter().find(|p| p.name == name)
+    }
+
+    pub fn has_property(&self, name: &str) -> bool {
+        self.get_property(name).is_some()
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct PlyHeader {
     pub format: PlyFormat,
     pub version: String,
-    pub elements: Vec<ElementDef>,
+    pub elem_defs: Vec<ElementDef>,
     pub comments: Vec<String>,
     pub obj_info: Vec<String>,
 }
@@ -182,7 +192,7 @@ impl PlyHeader {
 
                     current_element = Some(ElementDef {
                         name,
-                        row_count: count,
+                        count,
                         properties: Vec::new(),
                     });
                 }
@@ -231,17 +241,17 @@ impl PlyHeader {
         Ok(PlyHeader {
             format,
             version,
-            elements,
+            elem_defs: elements,
             comments,
             obj_info,
         })
     }
 
     pub fn get_element(&self, name: &str) -> Option<ElementDef> {
-        self.elements.iter().find(|e| e.name == name).cloned()
+        self.elem_defs.iter().find(|e| e.name == name).cloned()
     }
 
     pub fn has_element(&self, name: &str) -> bool {
-        self.elements.iter().any(|e| e.name == name)
+        self.elem_defs.iter().any(|e| e.name == name)
     }
 }

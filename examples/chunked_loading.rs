@@ -47,7 +47,6 @@ fn main() -> Result<(), PlyError> {
         faces: Vec::new(),
     };
 
-    // Create the chunk ply file.
     let mut file = ChunkPlyFile::new();
 
     for chunk in binary_data.chunks(chunk_size) {

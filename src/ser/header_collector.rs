@@ -205,14 +205,16 @@ pub(crate) struct HeaderCollector<W: Write> {
     writer: W,
     format: PlyFormat,
     recursion: Recursion,
+    comments: Vec<String>,
 }
 
 impl<W: Write> HeaderCollector<W> {
-    pub fn new(format: PlyFormat, writer: W) -> Self {
+    pub fn new(format: PlyFormat, writer: W, comments: Vec<String>) -> Self {
         Self {
             writer,
             format,
             recursion: Recursion::Header,
+            comments,
         }
     }
 }
@@ -373,6 +375,10 @@ impl<'a, W: Write> Serializer for &'a mut HeaderCollector<W> {
     ) -> Result<Self::SerializeStruct, Self::Error> {
         if self.recursion == Recursion::Header {
             writeln!(self.writer, "ply\nformat {} 1.0", self.format)?;
+
+            for comment in &self.comments {
+                writeln!(self.writer, "comment {}", comment)?;
+            }
         }
 
         Ok(HeaderStructCollector {
@@ -686,6 +692,7 @@ impl<W: Write> SerializeSeq for ListPropertyCollector<'_, W> {
                 value.serialize(&mut HeaderCollector {
                     writer: &mut self.writer,
                     format: PlyFormat::Ascii, // unused
+                    comments: vec![],         // unused
                     recursion: self.recursion,
                 })?
             } else if self.recursion == Recursion::Row {
@@ -907,7 +914,11 @@ mod tests {
 
         let mut output = Vec::new();
         vertex
-            .serialize(&mut HeaderCollector::new(PlyFormat::Ascii, &mut output))
+            .serialize(&mut HeaderCollector::new(
+                PlyFormat::Ascii,
+                &mut output,
+                vec!["Foo".to_string()],
+            ))
             .unwrap();
 
         let result = String::from_utf8(output).unwrap();
@@ -915,6 +926,7 @@ mod tests {
             result,
             r"ply
 format ascii 1.0
+comment Foo
 element vertices 2
 property float x
 property float y

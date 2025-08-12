@@ -93,7 +93,7 @@ fn create_all_types() -> AllTypesPly {
 fn roundtrip_ascii() {
     let original = create_test_mesh();
 
-    let bytes = to_bytes(&original, PlyFormat::Ascii).unwrap();
+    let bytes = to_bytes(&original, PlyFormat::Ascii, vec![]).unwrap();
 
     let str = String::from_utf8(bytes.clone()).unwrap();
     println!("Output: {str}");
@@ -108,7 +108,7 @@ fn roundtrip_ascii() {
 fn roundtrip_binary_little_endian() {
     let original = create_test_mesh();
 
-    let bytes = to_bytes(&original, PlyFormat::BinaryLittleEndian).unwrap();
+    let bytes = to_bytes(&original, PlyFormat::BinaryLittleEndian, vec![]).unwrap();
     let cursor = Cursor::new(bytes);
     let parsed: Mesh = from_reader(cursor).unwrap();
 
@@ -119,7 +119,7 @@ fn roundtrip_binary_little_endian() {
 fn roundtrip_binary_big_endian() {
     let original = create_test_mesh();
 
-    let bytes = to_bytes(&original, PlyFormat::BinaryBigEndian).unwrap();
+    let bytes = to_bytes(&original, PlyFormat::BinaryBigEndian, vec![]).unwrap();
     let cursor = Cursor::new(bytes);
     let parsed: Mesh = from_reader(cursor).unwrap();
 
@@ -130,7 +130,7 @@ fn roundtrip_binary_big_endian() {
 fn roundtrip_all_types_ascii() {
     let original = create_all_types();
 
-    let bytes = to_bytes(&original, PlyFormat::Ascii).unwrap();
+    let bytes = to_bytes(&original, PlyFormat::Ascii, vec![]).unwrap();
     let cursor = Cursor::new(bytes);
     let parsed: AllTypesPly = from_reader(cursor).unwrap();
 
@@ -141,7 +141,7 @@ fn roundtrip_all_types_ascii() {
 fn roundtrip_all_types_binary_le() {
     let original = create_all_types();
 
-    let bytes = to_bytes(&original, PlyFormat::BinaryLittleEndian).unwrap();
+    let bytes = to_bytes(&original, PlyFormat::BinaryLittleEndian, vec![]).unwrap();
     let cursor = Cursor::new(bytes);
     let parsed: AllTypesPly = from_reader(cursor).unwrap();
 
@@ -152,7 +152,7 @@ fn roundtrip_all_types_binary_le() {
 fn roundtrip_all_types_binary_be() {
     let original = create_all_types();
 
-    let bytes = to_bytes(&original, PlyFormat::BinaryBigEndian).unwrap();
+    let bytes = to_bytes(&original, PlyFormat::BinaryBigEndian, vec![]).unwrap();
     let cursor = Cursor::new(bytes);
     let parsed: AllTypesPly = from_reader(cursor).unwrap();
 
@@ -165,7 +165,7 @@ fn roundtrip_empty_elements() {
         vertex: vec![],
         face: vec![],
     };
-    let bytes = to_bytes(&empty_mesh, PlyFormat::Ascii).unwrap();
+    let bytes = to_bytes(&empty_mesh, PlyFormat::Ascii, vec![]).unwrap();
     let cursor = Cursor::new(bytes);
     let parsed: Mesh = from_reader(cursor).unwrap();
     assert_eq!(empty_mesh, parsed);
@@ -186,7 +186,7 @@ fn roundtrip_large_list() {
         }],
     };
 
-    let bytes = to_bytes(&faces, PlyFormat::Ascii).unwrap();
+    let bytes = to_bytes(&faces, PlyFormat::Ascii, vec![]).unwrap();
     let cursor = Cursor::new(bytes);
     let parsed: FaceOnly = from_reader(cursor).unwrap();
 

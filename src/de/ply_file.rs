@@ -102,10 +102,10 @@ impl<'de, R: Read> MapAccess<'de> for &mut PlyFileDeserializer<R> {
     where
         K: DeserializeSeed<'de>,
     {
-        if self.current_element >= self.header.elements.len() {
+        if self.current_element >= self.header.elem_defs.len() {
             return Ok(None);
         }
-        let element_name = &self.header.elements[self.current_element].name.as_bytes();
+        let element_name = &self.header.elem_defs[self.current_element].name.as_bytes();
         seed.deserialize(BytesDeserializer::new(element_name))
             .map(Some)
     }
@@ -114,14 +114,14 @@ impl<'de, R: Read> MapAccess<'de> for &mut PlyFileDeserializer<R> {
     where
         V: DeserializeSeed<'de>,
     {
-        let elem_def = &self.header.elements[self.current_element];
+        let elem_def = &self.header.elem_defs[self.current_element];
         self.current_element += 1;
 
         match self.header.format {
             PlyFormat::Ascii => seed.deserialize(ElementSeqDeserializer::<_, AsciiValReader>::new(
                 &elem_def.properties,
                 &mut self.reader,
-                elem_def.row_count,
+                elem_def.count,
             )),
             PlyFormat::BinaryLittleEndian => seed.deserialize(ElementSeqDeserializer::<
                 _,
@@ -129,13 +129,13 @@ impl<'de, R: Read> MapAccess<'de> for &mut PlyFileDeserializer<R> {
             >::new(
                 &elem_def.properties,
                 &mut self.reader,
-                elem_def.row_count,
+                elem_def.count,
             )),
             PlyFormat::BinaryBigEndian => {
                 seed.deserialize(ElementSeqDeserializer::<_, BinValReader<BigEndian>>::new(
                     &elem_def.properties,
                     &mut self.reader,
-                    elem_def.row_count,
+                    elem_def.count,
                 ))
             }
         }

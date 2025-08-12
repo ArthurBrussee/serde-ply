@@ -14,22 +14,27 @@ mod row;
 
 pub mod val_writer;
 
-pub fn to_writer<T>(val: &T, format: PlyFormat, mut writer: impl Write) -> Result<(), PlyError>
+pub fn to_writer<T>(
+    val: &T,
+    format: PlyFormat,
+    mut writer: impl Write,
+    comments: Vec<String>,
+) -> Result<(), PlyError>
 where
     T: Serialize,
 {
-    val.serialize(&mut HeaderCollector::new(format, &mut writer))?;
+    val.serialize(&mut HeaderCollector::new(format, &mut writer, comments))?;
     val.serialize(&mut PlyFileSerializer::new(format, &mut writer))?;
     Ok(())
 }
 
 /// Serializes
-pub fn to_bytes<T>(val: &T, format: PlyFormat) -> Result<Vec<u8>, PlyError>
+pub fn to_bytes<T>(val: &T, format: PlyFormat, comments: Vec<String>) -> Result<Vec<u8>, PlyError>
 where
     T: Serialize,
 {
     let mut buf = vec![];
-    val.serialize(&mut HeaderCollector::new(format, &mut buf))?;
+    val.serialize(&mut HeaderCollector::new(format, &mut buf, comments))?;
     val.serialize(&mut PlyFileSerializer::new(format, &mut buf))?;
     Ok(buf)
 }

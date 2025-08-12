@@ -66,7 +66,7 @@ end_header
     let mut reader = PlyFileDeserializer::from_reader(cursor).unwrap();
 
     assert_eq!(reader.header().format, PlyFormat::Ascii);
-    assert_eq!(reader.header().elements.len(), 1);
+    assert_eq!(reader.header().elem_defs.len(), 1);
 
     let vertices: Vec<Vertex> = reader.next_element().unwrap();
     assert_eq!(vertices.len(), 3);
@@ -98,7 +98,7 @@ end_header
     let mut reader = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
 
     assert_eq!(reader.header().format, PlyFormat::Ascii);
-    assert_eq!(reader.header().elements.len(), 1);
+    assert_eq!(reader.header().elem_defs.len(), 1);
     let result = reader.next_element::<Vec<Vertex>>();
     assert!(result.is_err());
 }
@@ -137,7 +137,7 @@ end_header
     let file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
 
     assert_eq!(file.header().format, PlyFormat::Ascii);
-    assert_eq!(file.header().elements.len(), 2);
+    assert_eq!(file.header().elem_defs.len(), 2);
     assert_eq!(file.header().comments[0], "made by Greg Turk");
     assert_eq!(file.header().comments[1], "this file is a cube");
 
