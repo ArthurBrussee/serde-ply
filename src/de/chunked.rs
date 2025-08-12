@@ -63,7 +63,7 @@ impl ChunkPlyFile {
 
     pub fn current_element(&mut self) -> Option<&ElementDef> {
         let ind = self.current_element_index;
-        self.header().map(|e| &e.elem_defs[ind])
+        self.header().and_then(|e| e.elem_defs.get(ind))
     }
 
     pub fn rows_done(&self) -> usize {
