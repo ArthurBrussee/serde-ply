@@ -395,16 +395,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde-ply"
-version = "0.1.0"
-dependencies = [
- "byteorder",
- "criterion",
- "serde",
- "thiserror",
-]
-
-[[package]]
 name = "serde_derive"
 version = "1.0.219"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -425,6 +415,16 @@ dependencies = [
  "memchr",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "serde_ply"
+version = "0.1.0"
+dependencies = [
+ "byteorder",
+ "criterion",
+ "serde",
+ "thiserror",
 ]
 
 [[package]]

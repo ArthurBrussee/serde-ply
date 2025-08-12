@@ -1,18 +1,59 @@
 # serde_ply
 
+[![Crates.io](https://img.shields.io/crates/v/serde_ply.svg)](https://crates.io/crates/serde_ply)
+[![Documentation](https://docs.rs/serde_ply/badge.svg)](https://docs.rs/serde_ply)
+
 Flexible and fast PLY parser and writer using serde. While PLY is an older format, it's still used in various geometry processing applications and research. PLY files act as simple key-value tables, and can be decoded in a streaming manner.
+
+## Installation
+
+Add this to your `Cargo.toml`:
+
+```toml
+[dependencies]
+serde_ply = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+```
 
 ## Features
 
 - Supports serializing and deserializing PLY files
-- Supports full Ply specification including list properties
-- Supports binary and ascii formats
-- Supports deserializing PLY files in chunks, for streaming data processing.
+- Supports full PLY specification including list properties
+- Supports binary and ASCII formats
+- Supports deserializing PLY files in chunks, for streaming data processing
 - High performance (1 GB/s+ deserialization)
+- Zero-copy where possible
+- Full serde integration
+
+## Quick Start
+
+```rust
+use serde::{Deserialize, Serialize};
+
+#[derive(Deserialize, Serialize, Debug)]
+struct Vertex {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+#[derive(Deserialize, Debug)]
+struct Mesh {
+    vertex: Vec<Vertex>,
+}
+
+// Read PLY file
+let mesh: Mesh = serde_ply::from_reader(reader)?;
+
+// Write PLY file
+let bytes = serde_ply::to_bytes(&mesh, serde_ply::PlyFormat::Ascii, vec![])?;
+```
 
 ## Examples
 
-Please see the examples folder for a few basic usages of the library.
+Please see the `examples/` folder for comprehensive usage examples including:
+- Basic serialization and deserialization
+- Chunked loading for large files
 
 ## Contributions
 
