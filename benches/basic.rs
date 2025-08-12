@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use serde::Deserialize;
-use serde_ply::PlyFileDeserializer;
+use serde_ply::PlyReader;
 use std::io::{BufReader, Cursor};
 
 #[derive(Deserialize)]
@@ -154,7 +154,7 @@ fn benchmark_parsing(c: &mut Criterion) {
         b.iter(|| {
             // Parse header once outside the benchmark
             let header_cursor = Cursor::new(&binary_data);
-            let mut file = PlyFileDeserializer::from_reader(BufReader::new(header_cursor)).unwrap();
+            let mut file = PlyReader::from_reader(BufReader::new(header_cursor)).unwrap();
             let _vertices: Vec<Vertex> = file.next_element().unwrap();
         });
     });
@@ -165,7 +165,7 @@ fn benchmark_parsing(c: &mut Criterion) {
         b.iter(|| {
             // Parse header once outside the benchmark
             let cursor = Cursor::new(&realistic_data);
-            let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+            let mut file = PlyReader::from_reader(BufReader::new(cursor)).unwrap();
             let _vertices: Vec<VertexWithColor> = file.next_element().unwrap();
         });
     });
@@ -176,7 +176,7 @@ fn benchmark_parsing(c: &mut Criterion) {
         b.iter(|| {
             // Parse header once outside the benchmark
             let cursor = Cursor::new(ascii_data.as_bytes());
-            let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+            let mut file = PlyReader::from_reader(BufReader::new(cursor)).unwrap();
             let _vertices: Vec<Vertex> = file.next_element().unwrap();
         });
     });

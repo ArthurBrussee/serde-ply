@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use serde_ply::ChunkPlyFile;
+use serde_ply::PlyChunkedReader;
 
 #[derive(Deserialize, Debug, PartialEq)]
 struct Vertex {
@@ -35,7 +35,7 @@ end_header
 0.5 1.0 0.0
 "#;
 
-    let mut ply_file = ChunkPlyFile::new();
+    let mut ply_file = PlyChunkedReader::new();
     ply_file.buffer_mut().extend_from_slice(ply_data.as_bytes());
     let vertices: Vec<Vertex> = ply_file.next_chunk().unwrap();
     assert_eq!(vertices.len(), 3);
@@ -72,7 +72,7 @@ fn test_binary_basic() {
         }
     }
 
-    let mut ply_file = ChunkPlyFile::new();
+    let mut ply_file = PlyChunkedReader::new();
     ply_file.buffer_mut().extend_from_slice(&binary_data);
 
     let parsed: Vec<Vertex> = ply_file.next_chunk().unwrap();
@@ -107,7 +107,7 @@ end_header
 1.0 2.0 3.0
 "#;
 
-    let mut ply_file = ChunkPlyFile::new();
+    let mut ply_file = PlyChunkedReader::new();
     ply_file.buffer_mut().extend_from_slice(ply_data.as_bytes());
 
     // Should get first vertex
@@ -158,7 +158,7 @@ fn test_binary_incomplete_elements() {
         }
     }
 
-    let mut ply_file = ChunkPlyFile::new();
+    let mut ply_file = PlyChunkedReader::new();
 
     // Feed only header + first complete vertex (12 bytes)
     let header_size = header.len();
@@ -228,7 +228,7 @@ end_header
 32 16 8
 "#;
 
-    let mut ply_file = ChunkPlyFile::new();
+    let mut ply_file = PlyChunkedReader::new();
     ply_file.buffer_mut().extend_from_slice(ply_data.as_bytes());
 
     // Parse vertices
@@ -267,7 +267,7 @@ end_header
 4 0 1 2 3
 "#;
 
-    let mut ply_file = ChunkPlyFile::new();
+    let mut ply_file = PlyChunkedReader::new();
     ply_file.buffer_mut().extend_from_slice(ply_data.as_bytes());
 
     let faces: Vec<Face> = ply_file.next_chunk().unwrap();
@@ -289,7 +289,7 @@ end_header
 4.0 5.0 6.0
 "#;
 
-    let mut ply_file = ChunkPlyFile::new();
+    let mut ply_file = PlyChunkedReader::new();
 
     // Feed data in 3-byte chunks
     let data = ply_data.as_bytes();
@@ -329,7 +329,7 @@ property float z
 end_header
 "#;
 
-    let mut ply_file = ChunkPlyFile::new();
+    let mut ply_file = PlyChunkedReader::new();
     ply_file.buffer_mut().extend_from_slice(ply_data.as_bytes());
     assert!(ply_file.next_chunk::<Vec<Vertex>>().unwrap().is_empty());
 }
@@ -353,7 +353,7 @@ fn test_binary_incomplete_lists() {
     binary_data.extend_from_slice(&1i32.to_le_bytes()); // index 1
                                                         // Missing 2 more indices
 
-    let mut ply_file = ChunkPlyFile::new();
+    let mut ply_file = PlyChunkedReader::new();
     ply_file.buffer_mut().extend_from_slice(&binary_data);
 
     // Should parse only the first complete face
@@ -397,7 +397,7 @@ fn test_binary_lists() {
         binary_data.extend_from_slice(&3i32.to_le_bytes()); // index 3
     }
 
-    let mut ply_file = ChunkPlyFile::new();
+    let mut ply_file = PlyChunkedReader::new();
 
     let mut faces = vec![];
     // Feed in small chunks to test list boundary detection

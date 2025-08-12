@@ -42,7 +42,7 @@ fn benchmark_chunked_parsing(c: &mut Criterion) {
 
     group.bench_function("chunked_chunks", |b| {
         b.iter(|| {
-            let mut ply_file = serde_ply::ChunkPlyFile::new();
+            let mut ply_file = serde_ply::PlyChunkedReader::new();
             let chunk_size = 8 * 1024 * 1024;
             let mut vertices: Vec<Vertex> = Vec::new();
 
@@ -61,7 +61,7 @@ fn benchmark_chunked_parsing(c: &mut Criterion) {
 
     group.bench_function("chunked_all_at_once", |b| {
         b.iter(|| {
-            let mut ply_file = serde_ply::ChunkPlyFile::new();
+            let mut ply_file = serde_ply::PlyChunkedReader::new();
             let mut vertices: Vec<Vertex> = Vec::new();
 
             // Feed all data at once using the buffer_mut API

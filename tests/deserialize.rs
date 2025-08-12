@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use serde_ply::{PlyFileDeserializer, PlyFormat};
+use serde_ply::{PlyFormat, PlyReader};
 use std::{
     collections::HashMap,
     io::{BufReader, Cursor},
@@ -63,7 +63,7 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut reader = PlyFileDeserializer::from_reader(cursor).unwrap();
+    let mut reader = PlyReader::from_reader(cursor).unwrap();
 
     assert_eq!(reader.header().format, PlyFormat::Ascii);
     assert_eq!(reader.header().elem_defs.len(), 1);
@@ -95,7 +95,7 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut reader = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut reader = PlyReader::from_reader(BufReader::new(cursor)).unwrap();
 
     assert_eq!(reader.header().format, PlyFormat::Ascii);
     assert_eq!(reader.header().elem_defs.len(), 1);
@@ -134,7 +134,7 @@ end_header
 
     // Test header parsing by creating deserializer first
     let cursor = Cursor::new(ply_data);
-    let file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let file = PlyReader::from_reader(BufReader::new(cursor)).unwrap();
 
     assert_eq!(file.header().format, PlyFormat::Ascii);
     assert_eq!(file.header().elem_defs.len(), 2);
@@ -183,7 +183,7 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let points: Vec<AllTypes> = file.next_element().unwrap();
     assert_eq!(points.len(), 1);
 
@@ -212,7 +212,7 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<Vertex> = file.next_element().unwrap();
     let faces: Vec<Face> = file.next_element().unwrap();
 
@@ -236,7 +236,7 @@ fn test_binary_little_endian() {
     binary_data.extend_from_slice(&6.0f32.to_le_bytes());
 
     let cursor = Cursor::new(binary_data);
-    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<Vertex> = file.next_element().unwrap();
     assert_eq!(file.header().format, PlyFormat::BinaryLittleEndian);
     assert_eq!(vertices.len(), 2);
@@ -267,7 +267,7 @@ fn test_binary_big_endian() {
     binary_data.extend_from_slice(&3.5f32.to_be_bytes());
 
     let cursor = Cursor::new(binary_data);
-    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = PlyReader::from_reader(BufReader::new(cursor)).unwrap();
 
     assert_eq!(file.header().format, PlyFormat::BinaryBigEndian);
 
@@ -305,7 +305,7 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<VertexWithList> = file.next_element().unwrap();
     assert_eq!(vertices.len(), 1);
     assert_eq!(vertices[0].x, 1.0);
@@ -328,7 +328,7 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<Vertex> = file.next_element().unwrap();
     assert_eq!(vertices.len(), 2);
     assert_eq!(
@@ -401,7 +401,7 @@ fn test_missing_required_field() {
     binary_data.extend_from_slice(&create_binary_vertex_data(1.0, 2.0, 3.0));
 
     let cursor = Cursor::new(binary_data);
-    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let result = file.next_element::<Vec<MissingFieldVertex>>();
     assert!(result.is_err());
 }
@@ -422,7 +422,7 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<BasicVertex> = file.next_element().unwrap();
     assert_eq!(vertices.len(), 1);
     assert_eq!(vertices[0].x, 1.0);
@@ -450,7 +450,7 @@ end_header
     }
 
     let cursor = Cursor::new(ply_data);
-    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<CoercedVertex> = file.next_element().unwrap();
     assert_eq!(vertices.len(), 1);
     assert_eq!(vertices[0].x, 1.5);
@@ -475,7 +475,7 @@ fn test_type_coercion_binary() {
     }
 
     let cursor = Cursor::new(binary_data);
-    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<CoercedVertex> = file.next_element().unwrap();
     assert_eq!(vertices.len(), 1);
     assert!((vertices[0].x - 1.5).abs() < 0.001);
@@ -505,7 +505,7 @@ end_header
     }
 
     let cursor = Cursor::new(ply_data);
-    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let result = file.next_element::<Vec<SmallIntVertex>>();
     assert!(result.is_err())
 }
@@ -526,7 +526,7 @@ fn test_integer_overflow_binary() {
     }
 
     let cursor = Cursor::new(binary_data);
-    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let result = file.next_element::<Vec<SmallIntVertex>>();
     assert!(result.is_err())
 }
@@ -542,7 +542,7 @@ invalid_count 0 1 2
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let result = file.next_element::<Vec<Face>>();
     assert!(result.is_err());
 }
@@ -558,7 +558,7 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let result = file.next_element::<Vec<Face>>();
     assert!(result.is_err());
 }
@@ -574,7 +574,7 @@ fn test_list_count_mismatch_binary() {
     // Missing 2 more elements
 
     let cursor = Cursor::new(binary_data);
-    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let result = file.next_element::<Vec<Face>>();
     assert!(result.is_err());
 }
@@ -593,7 +593,7 @@ inf -inf nan
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<BasicVertex> = file.next_element().unwrap();
     assert_eq!(vertices.len(), 2);
 
@@ -616,7 +616,7 @@ fn test_infinity_and_nan_binary() {
     binary_data.extend_from_slice(&create_binary_vertex_data(1.0, 2.0, 3.0));
 
     let cursor = Cursor::new(binary_data);
-    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<BasicVertex> = file.next_element().unwrap();
     assert_eq!(vertices.len(), 2);
 
@@ -639,7 +639,7 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<BasicVertex> = file.next_element().unwrap();
     assert_eq!(vertices.len(), 1);
 

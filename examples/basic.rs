@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_ply::PlyFileDeserializer;
+use serde_ply::PlyReader;
 use std::io::{BufReader, Cursor};
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -56,7 +56,7 @@ end_header
 
     println!("\nParse with header element by element: \n");
     let cursor = Cursor::new(ply_data);
-    let mut file = PlyFileDeserializer::from_reader(BufReader::new(cursor))?;
+    let mut file = PlyReader::from_reader(BufReader::new(cursor))?;
     let vertices: Vec<Vertex> = file.next_element()?;
     let faces: Vec<Face> = file.next_element()?;
 

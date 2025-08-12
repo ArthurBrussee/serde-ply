@@ -8,7 +8,7 @@ mod row;
 pub mod val_reader;
 use std::io::{BufRead, BufReader, Cursor};
 
-pub use ply_file::PlyFileDeserializer;
+pub use ply_file::PlyReader;
 use serde::Deserialize;
 
 use crate::DeserializeError;
@@ -20,7 +20,7 @@ pub fn from_reader<'a, T>(reader: impl BufRead) -> Result<T, DeserializeError>
 where
     T: Deserialize<'a>,
 {
-    let mut deserializer = PlyFileDeserializer::from_reader(reader)?;
+    let mut deserializer = PlyReader::from_reader(reader)?;
     let t: T = T::deserialize(&mut deserializer)?;
     Ok(t)
 }

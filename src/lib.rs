@@ -5,8 +5,8 @@ mod error;
 mod ser;
 
 pub use de::{
-    chunked::{ChunkPlyFile, RowVisitor},
-    PlyFileDeserializer,
+    chunked::{PlyChunkedReader, RowVisitor},
+    PlyReader,
 };
 pub use de::{from_bytes, from_reader, from_str};
 pub use error::{DeserializeError, SerializeError};
@@ -38,7 +38,7 @@ impl fmt::Display for PlyFormat {
     }
 }
 
-/// PLY scalar data types.
+/// Scalar data type.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ScalarType {
     I8,
@@ -94,6 +94,8 @@ impl Display for ScalarType {
 }
 
 /// PLY property type definition.
+///
+/// Either a scalar or a list.
 #[derive(Debug, Clone)]
 pub enum PropertyType {
     /// Single scalar value
@@ -105,14 +107,16 @@ pub enum PropertyType {
     },
 }
 
-/// PLY property definition.
+/// A definition of a single property
+///
+/// This is either a scalar or a list, see [`PropertyType`].
 #[derive(Debug, Clone)]
 pub struct PlyProperty {
     pub name: String,
     pub property_type: PropertyType,
 }
 
-/// PLY element definition with properties.
+/// Definition of one element with a list of the row properties.
 #[derive(Debug, Clone)]
 pub struct ElementDef {
     pub name: String,
@@ -304,65 +308,17 @@ impl PlyHeader {
     }
 }
 
-/// Wrapper types for PLY list properties with specific count types.
+/// Mark PLY list to be serialzied with `u16` as its count type.
 ///
-/// These allow you to control the count field size in PLY list properties,
-/// which determines the maximum number of elements per list.
-///
-/// # Examples
-///
-/// ```rust
-/// use serde::{Deserialize, Serialize};
-/// use serde_ply::{ListCountU16, ListCountU32};
-///
-/// #[derive(Deserialize, Serialize)]
-/// struct Face {
-///     // Standard list (u8 count, max 255 elements)
-///     small_indices: Vec<u32>,
-///
-///     // Medium list (u16 count, max 65535 elements)
-///     medium_indices: ListCountU16<Vec<u32>>,
-///
-///     // Large list (u32 count, max ~4 billion elements)
-///     large_indices: ListCountU32<Vec<u32>>,
-/// }
-/// ```
-
-/// PLY list with u8 count type (max 255 elements).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ListCountU8<T>(pub T);
-
-/// PLY list with u16 count type (max 65535 elements).
+/// Indicates this ply list should be serialized with a u16 (default u8) count.
 #[derive(Debug)]
 pub struct ListCountU16<T>(pub T);
 
-/// PLY list with u32 count type (max ~4 billion elements).
+/// Mark PLY list to be serialized with `u32` as its count type.
+///
+/// Indicates this ply list should be serialized with a u16 (default u8) count.
 #[derive(Debug)]
 pub struct ListCountU32<T>(pub T);
-
-/// Helper trait to identify list count types and their corresponding scalar types.
-pub trait ListCountType {
-    /// The scalar type used for the count field in PLY format.
-    fn count_scalar_type() -> ScalarType;
-}
-
-impl<T> ListCountType for ListCountU8<T> {
-    fn count_scalar_type() -> ScalarType {
-        ScalarType::U8
-    }
-}
-
-impl<T> ListCountType for ListCountU16<T> {
-    fn count_scalar_type() -> ScalarType {
-        ScalarType::U16
-    }
-}
-
-impl<T> ListCountType for ListCountU32<T> {
-    fn count_scalar_type() -> ScalarType {
-        ScalarType::U32
-    }
-}
 
 // Implement common traits for all ListCount types
 macro_rules! impl_list_count_traits {
@@ -411,6 +367,5 @@ macro_rules! impl_list_count_traits {
     };
 }
 
-impl_list_count_traits!(ListCountU8);
 impl_list_count_traits!(ListCountU16);
 impl_list_count_traits!(ListCountU32);

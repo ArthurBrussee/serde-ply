@@ -1,5 +1,5 @@
 use serde::{de::DeserializeSeed, Deserialize};
-use serde_ply::{ChunkPlyFile, DeserializeError, RowVisitor};
+use serde_ply::{DeserializeError, PlyChunkedReader, RowVisitor};
 
 #[derive(Deserialize, Debug, PartialEq)]
 struct Vertex {
@@ -51,7 +51,7 @@ fn main() -> Result<(), DeserializeError> {
         faces: Vec::new(),
     };
 
-    let mut file = ChunkPlyFile::new();
+    let mut file = PlyChunkedReader::new();
     let chunk_size = 15;
 
     for chunk in binary_data.chunks(chunk_size) {
@@ -60,7 +60,7 @@ fn main() -> Result<(), DeserializeError> {
 
         if let Some(current_element) = file.current_element() {
             // Now use a 'RowVisitor' with the file deserializer. This is a just a custom deserializer that has a callback
-            // for each row, you could also implement a custom deserializer wholesale. ChunkPlyFile deserializes to a sequence of rows
+            // for each row, you could also implement a custom deserializer wholesale. ChunkPlyReader deserializes to a sequence of rows
             // currently available. It's your responsibility to deserialize the right element.
 
             if current_element.name == "vertex" {

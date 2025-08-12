@@ -22,16 +22,25 @@ use std::{io::Cursor, marker::PhantomData};
 ///
 /// ```rust
 /// use serde::{Deserialize, de::DeserializeSeed};
-/// use serde_ply::{ChunkPlyFile, RowVisitor};
+/// use serde_ply::{PlyChunkedReader, RowVisitor};
 ///
 /// #[derive(Deserialize)]
 /// struct Vertex { x: f32, y: f32, z: f32 }
 ///
-/// let mut file = ChunkPlyFile::new();
+/// let mut file = PlyChunkedReader::new();
 /// let mut vertices = Vec::new();
 ///
 /// // Feed data in chunks
-/// let data = b"ply\nformat ascii 1.0\nelement vertex 2\nproperty float x\nproperty float y\nproperty float z\nend_header\n1.0 2.0 3.0\n4.0 5.0 6.0\n";
+/// let data = br#"ply
+/// format ascii 1.0
+/// element vertex 2
+/// property float x
+/// property float y
+/// property float z
+/// end_header
+/// 1.0 2.0 3.0
+/// 4.0 5.0 6.0
+/// "#;
 ///
 /// for chunk in data.chunks(10) {
 ///     file.buffer_mut().extend_from_slice(chunk);
@@ -42,14 +51,14 @@ use std::{io::Cursor, marker::PhantomData};
 /// }
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
-pub struct ChunkPlyFile {
+pub struct PlyChunkedReader {
     header: Option<PlyHeader>,
     current_element_index: usize,
     rows_parsed: usize,
     data_buffer: Vec<u8>,
 }
 
-impl ChunkPlyFile {
+impl PlyChunkedReader {
     /// Create a new chunked PLY file parser.
     pub fn new() -> Self {
         Self {
@@ -75,9 +84,9 @@ impl ChunkPlyFile {
     /// # Examples
     ///
     /// ```rust
-    /// use serde_ply::ChunkPlyFile;
+    /// use serde_ply::PlyChunkedReader;
     ///
-    /// let mut file = ChunkPlyFile::new();
+    /// let mut file = PlyChunkedReader::new();
     /// assert!(file.header().is_none());
     ///
     /// file.buffer_mut().extend_from_slice(
@@ -116,9 +125,9 @@ impl ChunkPlyFile {
     /// # Examples
     ///
     /// ```rust
-    /// use serde_ply::ChunkPlyFile;
+    /// use serde_ply::PlyChunkedReader;
     ///
-    /// let mut file = ChunkPlyFile::new();
+    /// let mut file = PlyChunkedReader::new();
     /// file.buffer_mut().extend_from_slice(
     ///     b"ply\nformat ascii 1.0\nelement vertex 1\nproperty float x\nend_header\n"
     /// );
@@ -139,7 +148,7 @@ impl ChunkPlyFile {
     }
 }
 
-impl<'de> Deserializer<'de> for &'_ mut ChunkPlyFile {
+impl<'de> Deserializer<'de> for &'_ mut PlyChunkedReader {
     type Error = DeserializeError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -171,7 +180,7 @@ impl<'de> Deserializer<'de> for &'_ mut ChunkPlyFile {
 
         let (res, rows_remaining) = match header.format {
             PlyFormat::Ascii => {
-                let mut seq = ChunkPlyFileSeqVisitor {
+                let mut seq = ChunkPlyReaderSeqVisitor {
                     remaining,
                     row: RowDeserializer::<_, AsciiValReader>::new(
                         &mut cursor,
@@ -182,7 +191,7 @@ impl<'de> Deserializer<'de> for &'_ mut ChunkPlyFile {
                 (res, seq.remaining)
             }
             PlyFormat::BinaryLittleEndian => {
-                let mut seq = ChunkPlyFileSeqVisitor {
+                let mut seq = ChunkPlyReaderSeqVisitor {
                     remaining,
                     row: RowDeserializer::<_, BinValReader<LittleEndian>>::new(
                         &mut cursor,
@@ -193,7 +202,7 @@ impl<'de> Deserializer<'de> for &'_ mut ChunkPlyFile {
                 (res, seq.remaining)
             }
             PlyFormat::BinaryBigEndian => {
-                let mut seq = ChunkPlyFileSeqVisitor {
+                let mut seq = ChunkPlyReaderSeqVisitor {
                     remaining,
                     row: RowDeserializer::<_, BinValReader<BigEndian>>::new(
                         &mut cursor,
@@ -248,13 +257,13 @@ impl<'de> SeqAccess<'de> for EmptySeq {
     }
 }
 
-struct ChunkPlyFileSeqVisitor<'a, D: AsRef<[u8]>, S: ScalarReader> {
+struct ChunkPlyReaderSeqVisitor<'a, D: AsRef<[u8]>, S: ScalarReader> {
     remaining: usize,
     row: RowDeserializer<'a, Cursor<D>, S>,
 }
 
 impl<'de, D: AsRef<[u8]>, S: ScalarReader> SeqAccess<'de>
-    for &mut ChunkPlyFileSeqVisitor<'_, D, S>
+    for &mut ChunkPlyReaderSeqVisitor<'_, D, S>
 {
     type Error = DeserializeError;
 
@@ -286,7 +295,7 @@ impl<'de, D: AsRef<[u8]>, S: ScalarReader> SeqAccess<'de>
     }
 }
 
-impl Default for ChunkPlyFile {
+impl Default for PlyChunkedReader {
     fn default() -> Self {
         Self::new()
     }
@@ -301,12 +310,12 @@ impl Default for ChunkPlyFile {
 ///
 /// ```rust
 /// use serde::{Deserialize, de::DeserializeSeed};
-/// use serde_ply::{ChunkPlyFile, RowVisitor};
+/// use serde_ply::{PlyChunkedReader, RowVisitor};
 ///
 /// #[derive(Deserialize)]
 /// struct Vertex { x: f32, y: f32, z: f32 }
 ///
-/// let mut file = ChunkPlyFile::new();
+/// let mut file = PlyChunkedReader::new();
 /// let mut count = 0;
 ///
 /// // Process each vertex as it's parsed

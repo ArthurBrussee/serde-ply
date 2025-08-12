@@ -13,18 +13,18 @@ use serde::{
     Serialize, Serializer,
 };
 
-pub struct PlyFileSerializer<W: Write> {
+pub struct PlyReaderSerializer<W: Write> {
     format: PlyFormat,
     writer: W,
 }
 
-impl<W: Write> PlyFileSerializer<W> {
+impl<W: Write> PlyReaderSerializer<W> {
     pub fn new(format: PlyFormat, writer: W) -> Self {
         Self { format, writer }
     }
 }
 
-impl<'a, W: Write> Serializer for &'a mut PlyFileSerializer<W> {
+impl<'a, W: Write> Serializer for &'a mut PlyReaderSerializer<W> {
     type Ok = ();
     type Error = SerializeError;
 

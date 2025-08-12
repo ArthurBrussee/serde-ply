@@ -5,7 +5,7 @@ use std::io::Write;
 use serde::{ser::Error, Serialize};
 
 use crate::{
-    ser::{header_collector::HeaderCollector, ply_file::PlyFileSerializer},
+    ser::{header_collector::HeaderCollector, ply_file::PlyReaderSerializer},
     PlyFormat, SerializeError,
 };
 
@@ -28,7 +28,7 @@ where
     T: Serialize,
 {
     val.serialize(&mut HeaderCollector::new(format, &mut writer, comments))?;
-    val.serialize(&mut PlyFileSerializer::new(format, &mut writer))?;
+    val.serialize(&mut PlyReaderSerializer::new(format, &mut writer))?;
     Ok(())
 }
 
@@ -45,7 +45,7 @@ where
 {
     let mut buf = vec![];
     val.serialize(&mut HeaderCollector::new(format, &mut buf, comments))?;
-    val.serialize(&mut PlyFileSerializer::new(format, &mut buf))?;
+    val.serialize(&mut PlyReaderSerializer::new(format, &mut buf))?;
     Ok(buf)
 }
 

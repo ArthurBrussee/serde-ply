@@ -67,7 +67,7 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut file = serde_ply::PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = serde_ply::PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<FlexibleVertex> = file.next_element().unwrap();
 
     assert_eq!(vertices.len(), 1);
@@ -95,7 +95,7 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut file = serde_ply::PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = serde_ply::PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<FlexibleVertex> = file.next_element().unwrap();
 
     assert_eq!(vertices.len(), 1);
@@ -120,7 +120,7 @@ end_header
 4.0 5.0 6.0 200 100 50 0.0
 "#;
     let cursor = Cursor::new(ply_data);
-    let mut file = serde_ply::PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = serde_ply::PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<FlexibleVertex> = file.next_element().unwrap();
 
     assert_eq!(vertices.len(), 2);
@@ -146,7 +146,7 @@ end_header
 4.0 5.0 6.0 200 100 50 0.0 2.0
 "#;
     let cursor = Cursor::new(ply_data);
-    let mut file = serde_ply::PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = serde_ply::PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<FlexibleVertex> = file.next_element().unwrap();
 
     assert_eq!(vertices.len(), 2);
@@ -192,7 +192,7 @@ end_header
     binary_data.extend_from_slice(&0.0f32.to_le_bytes());
 
     let cursor = Cursor::new(binary_data);
-    let mut file = serde_ply::PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = serde_ply::PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<FlexibleVertex> = file.next_element().unwrap();
 
     assert_eq!(vertices.len(), 2);
@@ -223,7 +223,7 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut file = serde_ply::PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = serde_ply::PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<VertexWithOptionalList> = file.next_element().unwrap();
 
     assert_eq!(vertices.len(), 1);
@@ -264,7 +264,7 @@ end_header
     binary_data.extend_from_slice(&0.3f32.to_le_bytes());
 
     let cursor = Cursor::new(binary_data);
-    let mut file = serde_ply::PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = serde_ply::PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<VertexWithOptionalList> = file.next_element().unwrap();
 
     assert_eq!(vertices.len(), 1);
@@ -295,7 +295,7 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut file = serde_ply::PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = serde_ply::PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<SimpleVertex> = file.next_element().unwrap();
 
     assert_eq!(vertices.len(), 1);
@@ -329,7 +329,7 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut file = serde_ply::PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = serde_ply::PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<IndexedVertex> = file.next_element().unwrap();
 
     assert_eq!(vertices.len(), 1);
@@ -368,7 +368,7 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut file = serde_ply::PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = serde_ply::PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<VertexWithNormalizedIndices> = file.next_element().unwrap();
 
     assert_eq!(vertices.len(), 1);
@@ -401,7 +401,7 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut file = serde_ply::PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = serde_ply::PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<ReorderedVertex> = file.next_element().unwrap();
 
     assert_eq!(vertices.len(), 1);
@@ -440,7 +440,7 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut file = serde_ply::PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = serde_ply::PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let result = file.next_element::<Vec<MismatchedVertex>>();
     assert!(result.is_err());
 }
@@ -472,7 +472,7 @@ end_header
 "#;
 
     let cursor = Cursor::new(ply_data);
-    let mut file = serde_ply::PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = serde_ply::PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<VertexWithFlatten> = file.next_element().unwrap();
 
     assert_eq!(vertices.len(), 1);
@@ -526,7 +526,7 @@ end_header
     ply_with_binary.extend_from_slice(&binary_data);
 
     let cursor = Cursor::new(ply_with_binary);
-    let mut file = serde_ply::PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let mut file = serde_ply::PlyReader::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<VertexWithFlatten> = file.next_element().unwrap();
 
     assert_eq!(vertices.len(), 1);

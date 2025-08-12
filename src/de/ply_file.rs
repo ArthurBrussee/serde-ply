@@ -20,7 +20,7 @@ use byteorder::{BigEndian, LittleEndian};
 ///
 /// ```rust
 /// use serde::Deserialize;
-/// use serde_ply::PlyFileDeserializer;
+/// use serde_ply::PlyReader;
 /// use std::io::{BufReader, Cursor};
 ///
 /// #[derive(Deserialize)]
@@ -35,19 +35,19 @@ use byteorder::{BigEndian, LittleEndian};
 ///                 end_header\n1.0 2.0 3.0\n3 0 1 2\n";
 ///
 /// let cursor = Cursor::new(ply_data);
-/// let mut deserializer = PlyFileDeserializer::from_reader(BufReader::new(cursor))?;
+/// let mut deserializer = PlyReader::from_reader(BufReader::new(cursor))?;
 ///
 /// let vertices: Vec<Vertex> = deserializer.next_element()?;
 /// let faces: Vec<Face> = deserializer.next_element()?;
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
-pub struct PlyFileDeserializer<R> {
+pub struct PlyReader<R> {
     reader: R,
     header: PlyHeader,
     current_element: usize,
 }
 
-impl<R: BufRead> PlyFileDeserializer<R> {
+impl<R: BufRead> PlyReader<R> {
     /// Create a new PLY file deserializer from a buffered reader.
     ///
     /// Parses the PLY header immediately. Use [`Self::next_element`] to
@@ -84,7 +84,7 @@ impl<R: BufRead> PlyFileDeserializer<R> {
     ///
     /// ```rust
     /// use serde::Deserialize;
-    /// # use serde_ply::PlyFileDeserializer;
+    /// # use serde_ply::PlyReader;
     /// # use std::io::{BufReader, Cursor};
     ///
     /// #[derive(Deserialize)]
@@ -92,7 +92,7 @@ impl<R: BufRead> PlyFileDeserializer<R> {
     ///
     /// # let ply_data = "ply\nformat ascii 1.0\nelement vertex 1\nproperty float x\nproperty float y\nproperty float z\nend_header\n1.0 2.0 3.0\n";
     /// # let cursor = Cursor::new(ply_data);
-    /// # let mut deserializer = PlyFileDeserializer::from_reader(BufReader::new(cursor))?;
+    /// # let mut deserializer = PlyReader::from_reader(BufReader::new(cursor))?;
     /// let vertices: Vec<Vertex> = deserializer.next_element()?;
     /// assert_eq!(vertices.len(), 1);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
@@ -126,7 +126,7 @@ impl<R: BufRead> PlyFileDeserializer<R> {
     }
 }
 
-impl<'de, R: BufRead> Deserializer<'de> for &mut PlyFileDeserializer<R> {
+impl<'de, R: BufRead> Deserializer<'de> for &mut PlyReader<R> {
     type Error = DeserializeError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -173,7 +173,7 @@ impl<'de, R: BufRead> Deserializer<'de> for &mut PlyFileDeserializer<R> {
     }
 }
 
-impl<'de, R: Read> MapAccess<'de> for &mut PlyFileDeserializer<R> {
+impl<'de, R: Read> MapAccess<'de> for &mut PlyReader<R> {
     type Error = DeserializeError;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
