@@ -2,7 +2,7 @@ mod de;
 mod error;
 mod ser;
 
-pub use error::PlyError;
+pub use error::{DeserializeError, SerializeError};
 
 pub use de::{from_reader, from_str};
 pub use ser::{to_bytes, to_writer};
@@ -10,7 +10,6 @@ pub use ser::{to_bytes, to_writer};
 pub use de::chunked::{ChunkPlyFile, RowVisitor};
 
 pub use de::PlyFileDeserializer;
-use serde::de::Error;
 
 use std::io::BufRead;
 
@@ -47,7 +46,7 @@ pub enum ScalarType {
 }
 
 impl ScalarType {
-    pub fn parse(s: &str) -> Result<Self, PlyError> {
+    pub fn parse(s: &str) -> Result<Self, DeserializeError> {
         match s {
             "char" | "int8" => Ok(ScalarType::I8),
             "uchar" | "uint8" => Ok(ScalarType::U8),
@@ -57,13 +56,16 @@ impl ScalarType {
             "uint" | "uint32" => Ok(ScalarType::U32),
             "float" | "float32" => Ok(ScalarType::F32),
             "double" | "float64" => Ok(ScalarType::F64),
-            _ => Err(PlyError::custom(format!("Unknown scalar type: {s}"))),
+            _ => Err(DeserializeError(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Unknown scalar type: {}", s),
+            ))),
         }
     }
 }
 
 impl FromStr for ScalarType {
-    type Err = PlyError;
+    type Err = DeserializeError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::parse(s)
@@ -129,11 +131,14 @@ pub struct PlyHeader {
 }
 
 impl PlyHeader {
-    pub(crate) fn parse<R: BufRead>(mut reader: R) -> Result<Self, PlyError> {
+    pub(crate) fn parse<R: BufRead>(mut reader: R) -> Result<Self, DeserializeError> {
         let mut line = String::new();
         reader.read_line(&mut line)?;
         if line.trim() != "ply" {
-            return Err(PlyError::custom("File must start with 'ply'"));
+            return Err(DeserializeError(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "File must start with 'ply'",
+            )));
         }
 
         let mut format = None;
@@ -147,7 +152,10 @@ impl PlyHeader {
             let mut line = String::new();
             let bytes_read = reader.read_line(&mut line)?;
             if bytes_read == 0 {
-                return Err(PlyError::custom("Unexpected end of file"));
+                return Err(DeserializeError(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "Unexpected end of file",
+                )));
             }
 
             if line == "end_header\n" {
@@ -160,13 +168,21 @@ impl PlyHeader {
             match parts[0] {
                 "format" => {
                     if parts.len() < 3 {
-                        return Err(PlyError::custom("Invalid format line"));
+                        return Err(DeserializeError(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "Invalid format line",
+                        )));
                     }
                     format = Some(match parts[1] {
                         "ascii" => PlyFormat::Ascii,
                         "binary_little_endian" => PlyFormat::BinaryLittleEndian,
                         "binary_big_endian" => PlyFormat::BinaryBigEndian,
-                        _ => return Err(PlyError::custom(parts[1])),
+                        _ => {
+                            return Err(DeserializeError(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                format!("Unknown format: {}", parts[1]),
+                            )))
+                        }
                     });
                     version = parts[2].to_string();
                 }
@@ -178,7 +194,10 @@ impl PlyHeader {
                 }
                 "element" => {
                     if parts.len() < 3 {
-                        return Err(PlyError::custom("Invalid element line"));
+                        return Err(DeserializeError(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "Invalid element line",
+                        )));
                     }
 
                     if let Some(element) = current_element.take() {
@@ -187,7 +206,10 @@ impl PlyHeader {
 
                     let name = parts[1].to_string();
                     let count = parts[2].parse::<usize>().map_err(|_| {
-                        PlyError::custom(format!("Invalid element count: {}", parts[2]))
+                        DeserializeError(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("Invalid element count: {}", parts[2]),
+                        ))
                     })?;
 
                     current_element = Some(ElementDef {
@@ -197,18 +219,27 @@ impl PlyHeader {
                     });
                 }
                 "property" => {
-                    let element = current_element
-                        .as_mut()
-                        .ok_or_else(|| PlyError::custom("Property without element"))?;
+                    let element = current_element.as_mut().ok_or_else(|| {
+                        DeserializeError(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "Property without element",
+                        ))
+                    })?;
 
                     if parts.len() < 3 {
-                        return Err(PlyError::custom("Invalid property line"));
+                        return Err(DeserializeError(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "Invalid property line",
+                        )));
                     }
 
                     if parts[1] == "list" {
                         // List property: property list <count_type> <data_type> <name>
                         if parts.len() < 5 {
-                            return Err(PlyError::custom("Invalid list property line"));
+                            return Err(DeserializeError(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                "Invalid list property line",
+                            )));
                         }
                         let count_type = ScalarType::parse(parts[2])?;
                         let data_type = ScalarType::parse(parts[3])?;
@@ -237,7 +268,12 @@ impl PlyHeader {
         if let Some(element) = current_element {
             elements.push(element);
         }
-        let format = format.ok_or_else(|| PlyError::custom("Missing format specification"))?;
+        let format = format.ok_or_else(|| {
+            DeserializeError(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Missing format specification",
+            ))
+        })?;
         Ok(PlyHeader {
             format,
             version,

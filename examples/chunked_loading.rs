@@ -1,5 +1,5 @@
 use serde::{de::DeserializeSeed, Deserialize};
-use serde_ply::{ChunkPlyFile, PlyError, RowVisitor};
+use serde_ply::{ChunkPlyFile, DeserializeError, RowVisitor};
 
 #[derive(Deserialize, Debug, PartialEq)]
 struct Vertex {
@@ -40,7 +40,7 @@ fn dummy_data(vertex_count: usize) -> Vec<u8> {
     binary_data
 }
 
-fn main() -> Result<(), PlyError> {
+fn main() -> Result<(), DeserializeError> {
     let vertex_count = 64;
 
     let binary_data = dummy_data(vertex_count);

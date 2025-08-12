@@ -3,21 +3,25 @@ use core::fmt;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-#[error("IO error: {0}")]
-pub struct PlyError(#[from] pub std::io::Error);
+#[error("Error while deserializing ply: {0}")]
+pub struct DeserializeError(#[from] pub std::io::Error);
 
-impl serde::de::Error for PlyError {
+#[derive(Error, Debug)]
+#[error("Error while serializing ply: {0}")]
+pub struct SerializeError(#[from] pub std::io::Error);
+
+impl serde::de::Error for DeserializeError {
     fn custom<T: fmt::Display>(msg: T) -> Self {
-        PlyError(std::io::Error::new(
+        DeserializeError(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             msg.to_string(),
         ))
     }
 }
 
-impl serde::ser::Error for PlyError {
+impl serde::ser::Error for SerializeError {
     fn custom<T: fmt::Display>(msg: T) -> Self {
-        PlyError(std::io::Error::new(
+        SerializeError(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             msg.to_string(),
         ))

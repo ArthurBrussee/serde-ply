@@ -9,12 +9,12 @@ use std::io::{BufRead, BufReader, Cursor};
 pub use ply_file::PlyFileDeserializer;
 use serde::Deserialize;
 
-use crate::PlyError;
+use crate::DeserializeError;
 
 // TODO: Make this compatible with :Read instead of BufRead?
 // This is just for a read_line when parsing the header but really
 // don't need BufRead otherwise.
-pub fn from_reader<'a, T>(reader: impl BufRead) -> Result<T, PlyError>
+pub fn from_reader<'a, T>(reader: impl BufRead) -> Result<T, DeserializeError>
 where
     T: Deserialize<'a>,
 {
@@ -23,7 +23,7 @@ where
     Ok(t)
 }
 
-pub fn from_str<'a, T>(str: &str) -> Result<T, PlyError>
+pub fn from_str<'a, T>(str: &str) -> Result<T, DeserializeError>
 where
     T: Deserialize<'a>,
 {

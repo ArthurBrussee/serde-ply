@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use byteorder::ByteOrder;
 use byteorder::WriteBytesExt;
 
-use crate::PlyError;
+use crate::SerializeError;
 
 pub struct BinValWriter<W: Write, E: ByteOrder> {
     writer: W,
@@ -36,58 +36,58 @@ impl<W: Write> AsciiValWriter<W> {
 }
 
 pub trait ScalarWriter {
-    fn write_i8(&mut self, val: i8) -> Result<(), PlyError>;
-    fn write_u8(&mut self, val: u8) -> Result<(), PlyError>;
-    fn write_i16(&mut self, val: i16) -> Result<(), PlyError>;
-    fn write_u16(&mut self, val: u16) -> Result<(), PlyError>;
-    fn write_i32(&mut self, val: i32) -> Result<(), PlyError>;
-    fn write_u32(&mut self, val: u32) -> Result<(), PlyError>;
-    fn write_f32(&mut self, val: f32) -> Result<(), PlyError>;
-    fn write_f64(&mut self, val: f64) -> Result<(), PlyError>;
+    fn write_i8(&mut self, val: i8) -> Result<(), SerializeError>;
+    fn write_u8(&mut self, val: u8) -> Result<(), SerializeError>;
+    fn write_i16(&mut self, val: i16) -> Result<(), SerializeError>;
+    fn write_u16(&mut self, val: u16) -> Result<(), SerializeError>;
+    fn write_i32(&mut self, val: i32) -> Result<(), SerializeError>;
+    fn write_u32(&mut self, val: u32) -> Result<(), SerializeError>;
+    fn write_f32(&mut self, val: f32) -> Result<(), SerializeError>;
+    fn write_f64(&mut self, val: f64) -> Result<(), SerializeError>;
 
-    fn write_row_end(&mut self) -> Result<(), PlyError>;
+    fn write_row_end(&mut self) -> Result<(), SerializeError>;
 }
 
 impl<W: Write, E: ByteOrder> ScalarWriter for BinValWriter<W, E> {
-    fn write_i8(&mut self, val: i8) -> Result<(), PlyError> {
+    fn write_i8(&mut self, val: i8) -> Result<(), SerializeError> {
         Ok(self.writer.write_i8(val)?)
     }
 
-    fn write_u8(&mut self, val: u8) -> Result<(), PlyError> {
+    fn write_u8(&mut self, val: u8) -> Result<(), SerializeError> {
         Ok(self.writer.write_u8(val)?)
     }
 
-    fn write_i16(&mut self, val: i16) -> Result<(), PlyError> {
+    fn write_i16(&mut self, val: i16) -> Result<(), SerializeError> {
         Ok(self.writer.write_i16::<E>(val)?)
     }
 
-    fn write_u16(&mut self, val: u16) -> Result<(), PlyError> {
+    fn write_u16(&mut self, val: u16) -> Result<(), SerializeError> {
         Ok(self.writer.write_u16::<E>(val)?)
     }
 
-    fn write_i32(&mut self, val: i32) -> Result<(), PlyError> {
+    fn write_i32(&mut self, val: i32) -> Result<(), SerializeError> {
         Ok(self.writer.write_i32::<E>(val)?)
     }
 
-    fn write_u32(&mut self, val: u32) -> Result<(), PlyError> {
+    fn write_u32(&mut self, val: u32) -> Result<(), SerializeError> {
         Ok(self.writer.write_u32::<E>(val)?)
     }
 
-    fn write_f32(&mut self, val: f32) -> Result<(), PlyError> {
+    fn write_f32(&mut self, val: f32) -> Result<(), SerializeError> {
         Ok(self.writer.write_f32::<E>(val)?)
     }
 
-    fn write_f64(&mut self, val: f64) -> Result<(), PlyError> {
+    fn write_f64(&mut self, val: f64) -> Result<(), SerializeError> {
         Ok(self.writer.write_f64::<E>(val)?)
     }
 
-    fn write_row_end(&mut self) -> Result<(), PlyError> {
+    fn write_row_end(&mut self) -> Result<(), SerializeError> {
         Ok(())
     }
 }
 
 impl<W: Write> AsciiValWriter<W> {
-    fn write_field(&mut self, val: impl Display) -> Result<(), PlyError> {
+    fn write_field(&mut self, val: impl Display) -> Result<(), SerializeError> {
         if !self.first_in_row {
             write!(self.writer, " ")?;
         }
@@ -98,39 +98,39 @@ impl<W: Write> AsciiValWriter<W> {
 }
 
 impl<W: Write> ScalarWriter for AsciiValWriter<W> {
-    fn write_i8(&mut self, val: i8) -> Result<(), PlyError> {
+    fn write_i8(&mut self, val: i8) -> Result<(), SerializeError> {
         self.write_field(val)
     }
 
-    fn write_u8(&mut self, val: u8) -> Result<(), PlyError> {
+    fn write_u8(&mut self, val: u8) -> Result<(), SerializeError> {
         self.write_field(val)
     }
 
-    fn write_i16(&mut self, val: i16) -> Result<(), PlyError> {
+    fn write_i16(&mut self, val: i16) -> Result<(), SerializeError> {
         self.write_field(val)
     }
 
-    fn write_u16(&mut self, val: u16) -> Result<(), PlyError> {
+    fn write_u16(&mut self, val: u16) -> Result<(), SerializeError> {
         self.write_field(val)
     }
 
-    fn write_i32(&mut self, val: i32) -> Result<(), PlyError> {
+    fn write_i32(&mut self, val: i32) -> Result<(), SerializeError> {
         self.write_field(val)
     }
 
-    fn write_u32(&mut self, val: u32) -> Result<(), PlyError> {
+    fn write_u32(&mut self, val: u32) -> Result<(), SerializeError> {
         self.write_field(val)
     }
 
-    fn write_f32(&mut self, val: f32) -> Result<(), PlyError> {
+    fn write_f32(&mut self, val: f32) -> Result<(), SerializeError> {
         self.write_field(val)
     }
 
-    fn write_f64(&mut self, val: f64) -> Result<(), PlyError> {
+    fn write_f64(&mut self, val: f64) -> Result<(), SerializeError> {
         self.write_field(val)
     }
 
-    fn write_row_end(&mut self) -> Result<(), PlyError> {
+    fn write_row_end(&mut self) -> Result<(), SerializeError> {
         writeln!(self.writer)?;
         self.first_in_row = true;
         Ok(())

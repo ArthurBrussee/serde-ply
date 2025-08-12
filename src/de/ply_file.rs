@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 
 use crate::de::val_reader::{AsciiValReader, BinValReader, ScalarReader};
 use crate::de::RowDeserializer;
-use crate::{PlyError, PlyFormat, PlyHeader, PlyProperty};
+use crate::{DeserializeError, PlyFormat, PlyHeader, PlyProperty};
 use byteorder::{BigEndian, LittleEndian};
 
 pub struct PlyFileDeserializer<R> {
@@ -17,7 +17,7 @@ pub struct PlyFileDeserializer<R> {
 }
 
 impl<R: BufRead> PlyFileDeserializer<R> {
-    pub fn from_reader(mut reader: R) -> Result<Self, PlyError> {
+    pub fn from_reader(mut reader: R) -> Result<Self, DeserializeError> {
         let header = PlyHeader::parse(&mut reader)?;
         Ok(Self {
             reader,
@@ -30,7 +30,7 @@ impl<R: BufRead> PlyFileDeserializer<R> {
         &self.header
     }
 
-    pub fn next_element<'a, T>(&mut self) -> Result<T, PlyError>
+    pub fn next_element<'a, T>(&mut self) -> Result<T, DeserializeError>
     where
         T: Deserialize<'a>,
     {
@@ -60,7 +60,7 @@ impl<R: BufRead> PlyFileDeserializer<R> {
 }
 
 impl<'de, R: BufRead> Deserializer<'de> for &mut PlyFileDeserializer<R> {
-    type Error = PlyError;
+    type Error = DeserializeError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
@@ -107,7 +107,7 @@ impl<'de, R: BufRead> Deserializer<'de> for &mut PlyFileDeserializer<R> {
 }
 
 impl<'de, R: Read> MapAccess<'de> for &mut PlyFileDeserializer<R> {
-    type Error = PlyError;
+    type Error = DeserializeError;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where
@@ -168,7 +168,7 @@ impl<'a, R: Read, S: ScalarReader> ElementSeqDeserializer<'a, R, S> {
 }
 
 impl<'de, R: Read, S: ScalarReader> Deserializer<'de> for ElementSeqDeserializer<'_, R, S> {
-    type Error = PlyError;
+    type Error = DeserializeError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
@@ -210,7 +210,7 @@ impl<'de, R: Read, S: ScalarReader> Deserializer<'de> for ElementSeqDeserializer
 }
 
 impl<'de, R: Read, S: ScalarReader> SeqAccess<'de> for ElementSeqDeserializer<'_, R, S> {
-    type Error = PlyError;
+    type Error = DeserializeError;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
     where

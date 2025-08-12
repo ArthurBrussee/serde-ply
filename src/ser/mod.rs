@@ -4,7 +4,7 @@ use serde::Serialize;
 
 use crate::{
     ser::{header_collector::HeaderCollector, ply_file::PlyFileSerializer},
-    PlyError, PlyFormat,
+    PlyFormat, SerializeError,
 };
 
 // mod ply_file;
@@ -19,7 +19,7 @@ pub fn to_writer<T>(
     format: PlyFormat,
     mut writer: impl Write,
     comments: Vec<String>,
-) -> Result<(), PlyError>
+) -> Result<(), SerializeError>
 where
     T: Serialize,
 {
@@ -29,7 +29,11 @@ where
 }
 
 /// Serializes
-pub fn to_bytes<T>(val: &T, format: PlyFormat, comments: Vec<String>) -> Result<Vec<u8>, PlyError>
+pub fn to_bytes<T>(
+    val: &T,
+    format: PlyFormat,
+    comments: Vec<String>,
+) -> Result<Vec<u8>, SerializeError>
 where
     T: Serialize,
 {

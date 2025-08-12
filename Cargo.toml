@@ -13,7 +13,7 @@ readme = "README.md"
 exclude = [".github/", "target/", ".rules"]
 
 [lib]
-name = "serde-ply"
+name = "serde_ply"
 path = "src/lib.rs"
 
 [dependencies]

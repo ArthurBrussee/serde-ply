@@ -3,7 +3,7 @@ use crate::{
         val_reader::{AsciiValReader, BinValReader, ScalarReader},
         RowDeserializer,
     },
-    ElementDef, PlyError, PlyFormat, PlyHeader,
+    DeserializeError, ElementDef, PlyFormat, PlyHeader,
 };
 use byteorder::{BigEndian, LittleEndian};
 use serde::{
@@ -54,25 +54,30 @@ impl ChunkPlyFile {
     }
 
     /// Parse the next chunk of elements from the buffer.
-    pub fn next_chunk<T>(&mut self) -> Result<T, PlyError>
+    pub fn next_chunk<T>(&mut self) -> Result<T, DeserializeError>
     where
         T: for<'de> Deserialize<'de>,
     {
         T::deserialize(self)
     }
 
+    /// Gets the current element cursors.
+    ///
+    /// This is None either when the header isn't parsed yet, or when the last
+    /// element is done parsing.
     pub fn current_element(&mut self) -> Option<&ElementDef> {
         let ind = self.current_element_index;
         self.header().and_then(|e| e.elem_defs.get(ind))
     }
 
+    /// How many rows have been parsed so far in the current element.
     pub fn rows_done(&self) -> usize {
         self.rows_parsed
     }
 }
 
 impl<'de> Deserializer<'de> for &'_ mut ChunkPlyFile {
-    type Error = PlyError;
+    type Error = DeserializeError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
@@ -93,7 +98,7 @@ impl<'de> Deserializer<'de> for &'_ mut ChunkPlyFile {
 
         // Check if we've moved past all elements, if so error that we've run out of elements.
         if self.current_element_index >= header.elem_defs.len() {
-            return Err(PlyError::custom("Ran out of elements"));
+            return Err(DeserializeError::custom("Ran out of elements"));
         }
 
         let elem_def = &header.elem_defs[self.current_element_index];
@@ -170,7 +175,7 @@ impl<'de> Deserializer<'de> for &'_ mut ChunkPlyFile {
 struct EmptySeq;
 
 impl<'de> SeqAccess<'de> for EmptySeq {
-    type Error = PlyError;
+    type Error = DeserializeError;
 
     fn next_element_seed<T>(&mut self, _seed: T) -> Result<Option<T::Value>, Self::Error>
     where
@@ -188,7 +193,7 @@ struct ChunkPlyFileSeqVisitor<'a, D: AsRef<[u8]>, S: ScalarReader> {
 impl<'de, D: AsRef<[u8]>, S: ScalarReader> SeqAccess<'de>
     for &mut ChunkPlyFileSeqVisitor<'_, D, S>
 {
-    type Error = PlyError;
+    type Error = DeserializeError;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
     where
