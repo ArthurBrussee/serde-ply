@@ -1,25 +1,30 @@
+//! Serde-based PLY file format serialization and deserialization.
+
 mod de;
 mod error;
 mod ser;
 
+pub use de::{
+    chunked::{ChunkPlyFile, RowVisitor},
+    PlyFileDeserializer,
+};
+pub use de::{from_bytes, from_reader, from_str};
 pub use error::{DeserializeError, SerializeError};
-
-pub use de::{from_reader, from_str};
-pub use ser::{to_bytes, to_writer};
-
-pub use de::chunked::{ChunkPlyFile, RowVisitor};
-
-pub use de::PlyFileDeserializer;
+pub use ser::{to_bytes, to_string, to_writer};
 
 use std::io::BufRead;
 
 use std::fmt::{self, Display};
 use std::str::FromStr;
 
+/// PLY file format encoding.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PlyFormat {
+    /// Plain text format
     Ascii,
+    /// Binary format with little-endian byte order
     BinaryLittleEndian,
+    /// Binary format with big-endian byte order
     BinaryBigEndian,
 }
 
@@ -33,6 +38,7 @@ impl fmt::Display for PlyFormat {
     }
 }
 
+/// PLY scalar data types.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ScalarType {
     I8,
@@ -46,7 +52,7 @@ pub enum ScalarType {
 }
 
 impl ScalarType {
-    pub fn parse(s: &str) -> Result<Self, DeserializeError> {
+    pub(crate) fn parse(s: &str) -> Result<Self, DeserializeError> {
         match s {
             "char" | "int8" => Ok(ScalarType::I8),
             "uchar" | "uint8" => Ok(ScalarType::U8),
@@ -87,23 +93,26 @@ impl Display for ScalarType {
     }
 }
 
+/// PLY property type definition.
 #[derive(Debug, Clone)]
-enum PropertyType {
-    /// A scalar property with a single value
+pub enum PropertyType {
+    /// Single scalar value
     Scalar(ScalarType),
-    /// A list property with variable length
+    /// Variable-length list with count and data types
     List {
         count_type: ScalarType,
         data_type: ScalarType,
     },
 }
 
+/// PLY property definition.
 #[derive(Debug, Clone)]
 pub struct PlyProperty {
     pub name: String,
-    property_type: PropertyType,
+    pub property_type: PropertyType,
 }
 
+/// PLY element definition with properties.
 #[derive(Debug, Clone)]
 pub struct ElementDef {
     pub name: String,
@@ -112,19 +121,21 @@ pub struct ElementDef {
 }
 
 impl ElementDef {
+    /// Find a property by name.
     pub fn get_property(&self, name: &str) -> Option<&PlyProperty> {
         self.properties.iter().find(|p| p.name == name)
     }
 
+    /// Check if the element has a property.
     pub fn has_property(&self, name: &str) -> bool {
         self.get_property(name).is_some()
     }
 }
 
+/// PLY file header containing format, elements, and metadata.
 #[derive(Debug, Clone)]
 pub struct PlyHeader {
     pub format: PlyFormat,
-    pub version: String,
     pub elem_defs: Vec<ElementDef>,
     pub comments: Vec<String>,
     pub obj_info: Vec<String>,
@@ -142,7 +153,6 @@ impl PlyHeader {
         }
 
         let mut format = None;
-        let mut version = String::new();
         let mut elements = Vec::new();
         let mut comments = Vec::new();
         let mut obj_info = Vec::new();
@@ -184,7 +194,6 @@ impl PlyHeader {
                             )))
                         }
                     });
-                    version = parts[2].to_string();
                 }
                 "comment" => {
                     comments.push(parts[1..].join(" "));
@@ -276,25 +285,29 @@ impl PlyHeader {
         })?;
         Ok(PlyHeader {
             format,
-            version,
             elem_defs: elements,
             comments,
             obj_info,
         })
     }
 
+    /// Find an element definition by name.
+    ///
+    /// Returns a reference to the element definition if found, otherwise None.
     pub fn get_element(&self, name: &str) -> Option<ElementDef> {
         self.elem_defs.iter().find(|e| e.name == name).cloned()
     }
 
+    /// Check if header has an element with the given name.
     pub fn has_element(&self, name: &str) -> bool {
         self.elem_defs.iter().any(|e| e.name == name)
     }
 }
 
-/// Newtype wrappers for PLY list properties with custom count types.
+/// Wrapper types for PLY list properties with specific count types.
 ///
-/// These types allow you to specify the count type for PLY list properties.
+/// These allow you to control the count field size in PLY list properties,
+/// which determines the maximum number of elements per list.
 ///
 /// # Examples
 ///
@@ -314,6 +327,7 @@ impl PlyHeader {
 ///     large_indices: ListCountU32<Vec<u32>>,
 /// }
 /// ```
+
 /// PLY list with u8 count type (max 255 elements).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListCountU8<T>(pub T);

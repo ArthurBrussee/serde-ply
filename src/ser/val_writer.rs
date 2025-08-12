@@ -7,7 +7,7 @@ use byteorder::WriteBytesExt;
 
 use crate::SerializeError;
 
-pub struct BinValWriter<W: Write, E: ByteOrder> {
+pub(crate) struct BinValWriter<W: Write, E: ByteOrder> {
     writer: W,
     _endian: PhantomData<E>,
 }
@@ -21,7 +21,7 @@ impl<W: Write, E: ByteOrder> BinValWriter<W, E> {
     }
 }
 
-pub struct AsciiValWriter<W: Write> {
+pub(crate) struct AsciiValWriter<W: Write> {
     writer: W,
     first_in_row: bool,
 }
@@ -35,7 +35,7 @@ impl<W: Write> AsciiValWriter<W> {
     }
 }
 
-pub trait ScalarWriter {
+pub(crate) trait ScalarWriter {
     fn write_i8(&mut self, val: i8) -> Result<(), SerializeError>;
     fn write_u8(&mut self, val: u8) -> Result<(), SerializeError>;
     fn write_i16(&mut self, val: i16) -> Result<(), SerializeError>;

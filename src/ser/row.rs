@@ -195,7 +195,7 @@ impl<'a, W: ScalarWriter> Serializer for &'a mut RowSerializer<W> {
     }
 }
 
-pub struct RowMapSerializer<'a, W: ScalarWriter> {
+pub(crate) struct RowMapSerializer<'a, W: ScalarWriter> {
     parent: &'a mut RowSerializer<W>,
     _marker: PhantomData<W>,
 }
@@ -465,7 +465,7 @@ impl<'a, W: ScalarWriter> Serializer for PropertySerializer<'a, W> {
     }
 }
 
-pub struct ListValuesSerializer<'a, W: ScalarWriter> {
+pub(crate) struct ListValuesSerializer<'a, W: ScalarWriter> {
     val_writer: &'a mut W,
 }
 

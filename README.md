@@ -30,14 +30,14 @@ serde = { version = "1.0", features = ["derive"] }
 ```rust
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize)]
 struct Vertex {
     x: f32,
     y: f32,
     z: f32,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize)]
 struct Mesh {
     vertex: Vec<Vertex>,
 }

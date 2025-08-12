@@ -7,9 +7,40 @@ use std::marker::PhantomData;
 
 use crate::de::val_reader::{AsciiValReader, BinValReader, ScalarReader};
 use crate::de::RowDeserializer;
-use crate::{DeserializeError, PlyFormat, PlyHeader, PlyProperty};
+use crate::{DeserializeError, ElementDef, PlyFormat, PlyHeader, PlyProperty};
 use byteorder::{BigEndian, LittleEndian};
 
+/// PLY file deserializer.
+///
+/// Also provides fine-grained control over PLY file parsing by allowing you to
+/// deserialize individual elements sequentially. This is useful when you need
+/// to handle different element types separately or process large files incrementally.
+///
+/// # Examples
+///
+/// ```rust
+/// use serde::Deserialize;
+/// use serde_ply::PlyFileDeserializer;
+/// use std::io::{BufReader, Cursor};
+///
+/// #[derive(Deserialize)]
+/// struct Vertex { x: f32, y: f32, z: f32 }
+///
+/// #[derive(Deserialize)]
+/// struct Face { vertex_indices: Vec<u32> }
+///
+/// let ply_data = "ply\nformat ascii 1.0\nelement vertex 1\n\
+///                 property float x\nproperty float y\nproperty float z\n\
+///                 element face 1\nproperty list uchar uint vertex_indices\n\
+///                 end_header\n1.0 2.0 3.0\n3 0 1 2\n";
+///
+/// let cursor = Cursor::new(ply_data);
+/// let mut deserializer = PlyFileDeserializer::from_reader(BufReader::new(cursor))?;
+///
+/// let vertices: Vec<Vertex> = deserializer.next_element()?;
+/// let faces: Vec<Face> = deserializer.next_element()?;
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub struct PlyFileDeserializer<R> {
     reader: R,
     header: PlyHeader,
@@ -17,6 +48,10 @@ pub struct PlyFileDeserializer<R> {
 }
 
 impl<R: BufRead> PlyFileDeserializer<R> {
+    /// Create a new PLY file deserializer from a buffered reader.
+    ///
+    /// Parses the PLY header immediately. Use [`Self::next_element`] to
+    /// deserialize individual elements sequentially.
     pub fn from_reader(mut reader: R) -> Result<Self, DeserializeError> {
         let header = PlyHeader::parse(&mut reader)?;
         Ok(Self {
@@ -26,10 +61,42 @@ impl<R: BufRead> PlyFileDeserializer<R> {
         })
     }
 
+    /// Get the parsed PLY header.
     pub fn header(&self) -> &PlyHeader {
         &self.header
     }
 
+    /// Get the current element definition.
+    ///
+    /// Returns the element that will be deserialized by the next call to
+    /// [`Self::next_element`]. Returns `None` if all elements have been processed.
+    pub fn current_element(&self) -> Option<&ElementDef> {
+        self.header.elem_defs.get(self.current_element)
+    }
+
+    /// Deserialize the next element.
+    ///
+    /// The type `T` should typically be a sequen of rows eg. `Vec<RowType>` where `RowType` matches
+    /// the properties of the current element. Use [`Self::current_element`] to
+    /// inspect the element definition.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use serde::Deserialize;
+    /// # use serde_ply::PlyFileDeserializer;
+    /// # use std::io::{BufReader, Cursor};
+    ///
+    /// #[derive(Deserialize)]
+    /// struct Vertex { x: f32, y: f32, z: f32 }
+    ///
+    /// # let ply_data = "ply\nformat ascii 1.0\nelement vertex 1\nproperty float x\nproperty float y\nproperty float z\nend_header\n1.0 2.0 3.0\n";
+    /// # let cursor = Cursor::new(ply_data);
+    /// # let mut deserializer = PlyFileDeserializer::from_reader(BufReader::new(cursor))?;
+    /// let vertices: Vec<Vertex> = deserializer.next_element()?;
+    /// assert_eq!(vertices.len(), 1);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn next_element<'a, T>(&mut self) -> Result<T, DeserializeError>
     where
         T: Deserialize<'a>,

@@ -208,7 +208,7 @@ pub(crate) struct HeaderCollector<W: Write> {
 }
 
 impl<W: Write> HeaderCollector<W> {
-    pub fn new(format: PlyFormat, writer: W, comments: Vec<String>) -> Self {
+    pub(crate) fn new(format: PlyFormat, writer: W, comments: Vec<String>) -> Self {
         Self {
             writer,
             format,
@@ -399,7 +399,7 @@ impl<'a, W: Write> Serializer for &'a mut HeaderCollector<W> {
     }
 }
 
-pub struct HeaderMapCollector<'a, W: Write> {
+pub(crate) struct HeaderMapCollector<'a, W: Write> {
     cur_key: String,
     parent: &'a mut HeaderCollector<W>,
     recursion: Recursion,
@@ -437,7 +437,7 @@ impl<W: Write> SerializeMap for HeaderMapCollector<'_, W> {
     }
 }
 
-pub struct HeaderStructCollector<'a, W: Write> {
+pub(crate) struct HeaderStructCollector<'a, W: Write> {
     parent: &'a mut HeaderCollector<W>,
     recursion: Recursion,
 }

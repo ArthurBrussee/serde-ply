@@ -9,8 +9,8 @@ use std::{io::Read, marker::PhantomData};
 
 pub(crate) struct RowDeserializer<'a, R: Read, S: ScalarReader> {
     pub reader: &'a mut R,
-    pub properties: &'a [PlyProperty],
-    pub current_property: u32,
+    properties: &'a [PlyProperty],
+    current_property: u32,
     _marker: PhantomData<S>,
 }
 

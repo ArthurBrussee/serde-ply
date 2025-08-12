@@ -2,10 +2,12 @@ use core::fmt;
 
 use thiserror::Error;
 
+/// Error that occurs during PLY deserialization.
 #[derive(Error, Debug)]
 #[error("Error while deserializing ply: {0}")]
 pub struct DeserializeError(#[from] pub std::io::Error);
 
+/// Error that occurs during PLY serialization.
 #[derive(Error, Debug)]
 #[error("Error while serializing ply: {0}")]
 pub struct SerializeError(#[from] pub std::io::Error);

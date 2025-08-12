@@ -4,11 +4,11 @@ use std::marker::PhantomData;
 use byteorder::ByteOrder;
 use byteorder::ReadBytesExt;
 
-pub struct BinValReader<E: ByteOrder> {
+pub(crate) struct BinValReader<E: ByteOrder> {
     _endian: PhantomData<E>,
 }
 
-pub struct AsciiValReader {}
+pub(crate) struct AsciiValReader {}
 
 pub(crate) trait ScalarReader {
     fn read_i8(reader: impl Read) -> Result<i8, std::io::Error>;
