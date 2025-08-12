@@ -590,13 +590,12 @@ impl<'a, W: Write> Serializer for PropertyCollector<'a, W> {
         _name: &'static str,
         _variant_index: u32,
         _variant: &'static str,
-        _value: &T,
+        value: &T,
     ) -> Result<Self::Ok, Self::Error>
     where
         T: Serialize + ?Sized,
     {
-        // TODO: Should support these.
-        Err(PlyError::custom("Newtype structs are not supported"))
+        value.serialize(self)
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {

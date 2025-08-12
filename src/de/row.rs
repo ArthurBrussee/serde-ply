@@ -54,9 +54,20 @@ impl<'de, R: Read, S: ScalarReader> Deserializer<'de> for &mut RowDeserializer<'
         visitor.visit_map(self)
     }
 
+    fn deserialize_newtype_struct<V>(
+        self,
+        _name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        visitor.visit_newtype_struct(self)
+    }
+
     serde::forward_to_deserialize_any! {
         bool i8 u8 i16 u16 i32 u32 i64 u64 f32 f64 char str string
-        bytes byte_buf option unit unit_struct newtype_struct seq tuple
+        bytes byte_buf option unit unit_struct seq tuple
         tuple_struct enum identifier ignored_any
     }
 }
@@ -80,7 +91,9 @@ impl<'de, R: Read, S: ScalarReader> MapAccess<'de> for RowDeserializer<'_, R, S>
     where
         V: DeserializeSeed<'de>,
     {
-        // TODO: Hope the bounds check here gets optimzed out (next_key_seed already checks).
+        // I really hope the bounds check here gets optimized out (next_key_seed already checks).
+        // Could use unsafe here to avoid this but let's not use any unsafe code in a data format,
+        // I am not smart enough :)
         match self.properties[self.current_property as usize].property_type {
             PropertyType::Scalar(data_type) => {
                 self.current_property += 1;
@@ -138,10 +151,21 @@ impl<'de, R: Read, S: ScalarReader> Deserializer<'de> for ScalarDeserializer<'_,
         visitor.visit_some(self)
     }
 
+    fn deserialize_newtype_struct<V>(
+        self,
+        _name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        visitor.visit_newtype_struct(self)
+    }
+
     serde::forward_to_deserialize_any! {
         bool i8 u8 i16 u16 i32 u32 f32 f64 i128 i64 u128 u64 char str string
-        bytes byte_buf unit unit_struct newtype_struct seq tuple
-        tuple_struct map struct enum identifier ignored_any
+        bytes byte_buf unit unit_struct seq tuple tuple_struct
+        map struct enum identifier ignored_any
     }
 }
 
@@ -192,9 +216,20 @@ impl<'de, R: Read, S: ScalarReader> Deserializer<'de> for ListDeserializer<R, S>
         })
     }
 
+    fn deserialize_newtype_struct<V>(
+        self,
+        _name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        visitor.visit_newtype_struct(self)
+    }
+
     serde::forward_to_deserialize_any! {
         bool i8 u8 i16 u16 i32 u32 f32 f64 i128 i64 u128 u64 char str string
-        bytes byte_buf unit unit_struct newtype_struct tuple
+        bytes byte_buf unit unit_struct tuple
         tuple_struct map struct enum identifier ignored_any
     }
 }

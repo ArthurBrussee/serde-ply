@@ -149,9 +149,20 @@ impl<'de> Deserializer<'de> for &'_ mut ChunkPlyFile {
         Ok(res)
     }
 
+    fn deserialize_newtype_struct<V>(
+        self,
+        _name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        visitor.visit_newtype_struct(self)
+    }
+
     serde::forward_to_deserialize_any! {
         bool i8 u8 i16 u16 i32 u32 f32 f64 i128 i64 u128 u64 char str string
-        bytes byte_buf unit unit_struct newtype_struct tuple
+        bytes byte_buf unit unit_struct tuple
         tuple_struct map struct enum identifier ignored_any option
     }
 }

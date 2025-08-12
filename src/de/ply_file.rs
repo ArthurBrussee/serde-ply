@@ -88,9 +88,20 @@ impl<'de, R: BufRead> Deserializer<'de> for &mut PlyFileDeserializer<R> {
         visitor.visit_map(self)
     }
 
+    fn deserialize_newtype_struct<V>(
+        self,
+        _name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        visitor.visit_newtype_struct(self)
+    }
+
     serde::forward_to_deserialize_any! {
         bool i8 u8 i16 u16 i32 u32 i64 u64 f32 f64 char str string
-        bytes byte_buf option unit unit_struct newtype_struct tuple
+        bytes byte_buf option unit unit_struct tuple
         tuple_struct enum identifier ignored_any seq
     }
 }
@@ -180,9 +191,20 @@ impl<'de, R: Read, S: ScalarReader> Deserializer<'de> for ElementSeqDeserializer
         visitor.visit_some(self)
     }
 
+    fn deserialize_newtype_struct<V>(
+        self,
+        _name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        visitor.visit_newtype_struct(self)
+    }
+
     serde::forward_to_deserialize_any! {
         bool i8 u8 i16 u16 i32 u32 f32 f64 char str string
-        bytes byte_buf unit unit_struct newtype_struct map struct tuple
+        bytes byte_buf unit unit_struct map struct tuple
         tuple_struct enum identifier ignored_any i64 u64
     }
 }

@@ -1,6 +1,9 @@
 use serde::{Deserialize, Deserializer};
 use std::io::{BufReader, Cursor};
 
+#[derive(Deserialize, Default, Debug, PartialEq)]
+struct NewFloat(f32);
+
 #[derive(Deserialize, Debug, PartialEq)]
 struct FlexibleVertex {
     #[serde(rename = "x")]
@@ -19,6 +22,8 @@ struct FlexibleVertex {
     normal_x: Option<f32>,
     #[serde(skip)]
     computed: String,
+    #[serde(default)]
+    new_typed: NewFloat,
 }
 
 impl Default for FlexibleVertex {
@@ -33,6 +38,7 @@ impl Default for FlexibleVertex {
             confidence: 1.0,
             normal_x: None,
             computed: "computed".to_string(),
+            new_typed: NewFloat(4.0),
         }
     }
 }
@@ -113,7 +119,6 @@ end_header
 1.0 2.0 3.0 255 128 64 0.707
 4.0 5.0 6.0 200 100 50 0.0
 "#;
-
     let cursor = Cursor::new(ply_data);
     let mut file = serde_ply::PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
     let vertices: Vec<FlexibleVertex> = file.next_element().unwrap();
@@ -121,6 +126,32 @@ end_header
     assert_eq!(vertices.len(), 2);
     assert_eq!(vertices[0].normal_x, Some(0.707));
     assert_eq!(vertices[1].normal_x, Some(0.0));
+}
+
+#[test]
+fn test_newtype_field() {
+    let ply_data = r#"ply
+format ascii 1.0
+element vertex 2
+property float x
+property float y
+property float z
+property uchar red
+property uchar green
+property uchar blue
+property float normal_x
+property float new_typed
+end_header
+1.0 2.0 3.0 255 128 64 0.707 1.0
+4.0 5.0 6.0 200 100 50 0.0 2.0
+"#;
+    let cursor = Cursor::new(ply_data);
+    let mut file = serde_ply::PlyFileDeserializer::from_reader(BufReader::new(cursor)).unwrap();
+    let vertices: Vec<FlexibleVertex> = file.next_element().unwrap();
+
+    assert_eq!(vertices.len(), 2);
+    assert_eq!(vertices[0].new_typed.0, 1.0);
+    assert_eq!(vertices[1].new_typed.0, 2.0);
 }
 
 #[test]
