@@ -1,7 +1,7 @@
-# serde_ply
+# serde-ply
 
-[![Crates.io](https://img.shields.io/crates/v/serde_ply.svg)](https://crates.io/crates/serde_ply)
-[![Documentation](https://docs.rs/serde_ply/badge.svg)](https://docs.rs/serde_ply)
+[![Crates.io](https://img.shields.io/crates/v/serde-ply.svg)](https://crates.io/crates/serde-ply)
+[![Documentation](https://docs.rs/serde-ply/badge.svg)](https://docs.rs/serde-ply)
 
 Flexible and fast PLY parser and writer using serde. While PLY is an older format, it's still used in various geometry processing applications and research. PLY files act as simple key-value tables, and can be decoded in a streaming manner.
 
@@ -11,7 +11,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-serde_ply = "0.1"
+serde-ply = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 ```
 
