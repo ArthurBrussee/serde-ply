@@ -11,13 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Rename some API to be more consistent (ChunkPlyFile -> PlyChunkedReader, PlyFileDeserializer -> PlyReader)
 - Improve API & documentation
-- improve documentation
+- Serialize with "SerializeOptions" builder for a terser API & ability to set `obj_info`.
 
 ### Other
 
-- More docs improvments
-- Serialize with "SerializeOptions"
+- Add doc tests
+- Fix release-plz.
 
 ## [0.1.1](https://github.com/ArthurBrussee/serde_ply/compare/v0.1.0...v0.1.1) - 2025-08-12
 
@@ -28,9 +29,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 
 - Change GitHub link again
-# Changelog
-
-Notable changes to this project will be documented in this file.
 
 ## [0.1.0]
 
