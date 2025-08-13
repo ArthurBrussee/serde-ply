@@ -18,7 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 
 - Add doc tests
-- Fix release-plz.
+- Fix release-plz
+- Removed ListCountU8 as it's the default anyway
 
 ## [0.1.1](https://github.com/ArthurBrussee/serde_ply/compare/v0.1.0...v0.1.1) - 2025-08-12
 
