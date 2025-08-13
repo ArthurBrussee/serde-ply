@@ -20,14 +20,14 @@ pub mod val_writer;
 /// Writes the complete PLY file including header and data in the specified format.
 pub fn to_writer<T>(
     val: &T,
-    format: PlyFormat,
+    options: SerializeOptions,
     mut writer: impl Write,
-    comments: Vec<String>,
 ) -> Result<(), SerializeError>
 where
     T: Serialize,
 {
-    val.serialize(&mut HeaderCollector::new(format, &mut writer, comments))?;
+    let format = options.format;
+    val.serialize(&mut HeaderCollector::new(options, &mut writer))?;
     val.serialize(&mut PlyReaderSerializer::new(format, &mut writer))?;
     Ok(())
 }
@@ -35,28 +35,77 @@ where
 /// Serialize PLY data to bytes.
 ///
 /// Returns the complete PLY file as a byte vector in the specified format.
-pub fn to_bytes<T>(
-    val: &T,
-    format: PlyFormat,
-    comments: Vec<String>,
-) -> Result<Vec<u8>, SerializeError>
+pub fn to_bytes<T>(val: &T, options: SerializeOptions) -> Result<Vec<u8>, SerializeError>
 where
     T: Serialize,
 {
     let mut buf = vec![];
-    val.serialize(&mut HeaderCollector::new(format, &mut buf, comments))?;
-    val.serialize(&mut PlyReaderSerializer::new(format, &mut buf))?;
+    to_writer(val, options, &mut buf)?;
     Ok(buf)
 }
 
 /// Serialize PLY data to a string.
 ///
-/// This always uses the ASCII format since binary data cannot be represented as valid UTF-8.
+/// This only works with ASCII since binary data cannot be represented as valid UTF-8.
 /// Returns the complete PLY file as a string.
-pub fn to_string<T>(val: &T, comments: Vec<String>) -> Result<String, SerializeError>
+pub fn to_string<T>(val: &T, options: SerializeOptions) -> Result<String, SerializeError>
 where
     T: Serialize,
 {
-    String::from_utf8(to_bytes(val, PlyFormat::Ascii, comments)?)
-        .map_err(|e| SerializeError::custom(e.to_string()))
+    if options.format != PlyFormat::Ascii {
+        return Err(SerializeError::custom(
+            "Cannot serialize binary PLY to string",
+        ));
+    }
+    String::from_utf8(to_bytes(val, options)?).map_err(|e| SerializeError::custom(e.to_string()))
+}
+
+/// Options when serializing PLY files.
+///
+/// This is a builder struct that lets you set the ply format and other metadata.
+pub struct SerializeOptions {
+    format: PlyFormat,
+    comments: Vec<String>,
+    obj_info: Vec<String>,
+}
+
+impl SerializeOptions {
+    /// Create a new [`SerializeOptions`] with the given format.
+    pub fn new(format: PlyFormat) -> Self {
+        Self {
+            format,
+            comments: Vec::new(),
+            obj_info: Vec::new(),
+        }
+    }
+
+    /// Default [`SerializeOptions`] for ASCII format.
+    pub fn ascii() -> Self {
+        Self::new(PlyFormat::Ascii)
+    }
+
+    /// Default [`SerializeOptions`] for binary (little-endian) format.
+    pub fn binary_le() -> Self {
+        Self::new(PlyFormat::BinaryLittleEndian)
+    }
+
+    /// Default [`SerializeOptions`] for binary (big-endian) format.
+    pub fn binary_be() -> Self {
+        Self::new(PlyFormat::BinaryBigEndian)
+    }
+
+    /// Add comments to be serialized.
+    pub fn with_comments(mut self, comments: Vec<String>) -> Self {
+        self.comments.extend(comments);
+        self
+    }
+
+    /// Add `obj_info` to be serialized.
+    ///
+    /// These are essentially the same as comments but often recognized seperately
+    /// by ply readers.
+    pub fn with_obj_info(mut self, obj_info: Vec<String>) -> Self {
+        self.obj_info.extend(obj_info);
+        self
+    }
 }

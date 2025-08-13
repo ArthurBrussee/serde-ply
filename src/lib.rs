@@ -10,7 +10,7 @@ pub use de::{
 };
 pub use de::{from_bytes, from_reader, from_str};
 pub use error::{DeserializeError, SerializeError};
-pub use ser::{to_bytes, to_string, to_writer};
+pub use ser::{to_bytes, to_string, to_writer, SerializeOptions};
 
 use std::io::BufRead;
 

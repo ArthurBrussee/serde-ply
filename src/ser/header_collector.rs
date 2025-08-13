@@ -1,4 +1,4 @@
-use crate::{PlyFormat, ScalarType, SerializeError};
+use crate::{ser::SerializeOptions, ScalarType, SerializeError};
 use serde::{
     ser::{Error, Impossible, SerializeMap, SerializeSeq, SerializeStruct},
     Serialize, Serializer,
@@ -202,19 +202,30 @@ pub(crate) fn extract_string_key<T: Serialize + ?Sized>(key: &T) -> Result<Strin
 
 pub(crate) struct HeaderCollector<W: Write> {
     writer: W,
-    format: PlyFormat,
+    options: SerializeOptions,
     recursion: Recursion,
-    comments: Vec<String>,
 }
 
 impl<W: Write> HeaderCollector<W> {
-    pub(crate) fn new(format: PlyFormat, writer: W, comments: Vec<String>) -> Self {
+    pub(crate) fn new(options: SerializeOptions, writer: W) -> Self {
         Self {
             writer,
-            format,
+            options,
             recursion: Recursion::Header,
-            comments,
         }
+    }
+}
+
+impl<W: Write> HeaderCollector<W> {
+    fn write_options(&mut self) -> Result<(), SerializeError> {
+        writeln!(self.writer, "ply\nformat {} 1.0", self.options.format)?;
+        for comment in &self.options.comments {
+            writeln!(self.writer, "comment {}", comment)?;
+        }
+        for obj in &self.options.obj_info {
+            writeln!(self.writer, "obj_info {}", obj)?;
+        }
+        Ok(())
     }
 }
 
@@ -358,7 +369,7 @@ impl<'a, W: Write> Serializer for &'a mut HeaderCollector<W> {
 
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
         if self.recursion == Recursion::Header {
-            writeln!(self.writer, "ply\nformat {}", self.format)?;
+            self.write_options()?;
         }
         Ok(HeaderMapCollector {
             recursion: self.recursion,
@@ -373,11 +384,7 @@ impl<'a, W: Write> Serializer for &'a mut HeaderCollector<W> {
         _len: usize,
     ) -> Result<Self::SerializeStruct, Self::Error> {
         if self.recursion == Recursion::Header {
-            writeln!(self.writer, "ply\nformat {} 1.0", self.format)?;
-
-            for comment in &self.comments {
-                writeln!(self.writer, "comment {}", comment)?;
-            }
+            self.write_options()?;
         }
 
         Ok(HeaderStructCollector {
@@ -703,8 +710,7 @@ impl<W: Write> SerializeSeq for ListPropertyCollector<'_, W> {
             if self.recursion == Recursion::Element {
                 value.serialize(&mut HeaderCollector {
                     writer: &mut self.writer,
-                    format: PlyFormat::Ascii, // unused
-                    comments: vec![],         // unused
+                    options: SerializeOptions::ascii(), // unused
                     recursion: self.recursion,
                 })?
             } else if self.recursion == Recursion::Row {
@@ -931,9 +937,8 @@ mod tests {
         let mut output = Vec::new();
         vertex
             .serialize(&mut HeaderCollector::new(
-                PlyFormat::Ascii,
+                SerializeOptions::ascii().with_comments(vec!["Foo".to_string()]),
                 &mut output,
-                vec!["Foo".to_string()],
             ))
             .unwrap();
 

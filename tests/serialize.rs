@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_ply::{from_reader, to_bytes, PlyFormat};
+use serde_ply::{from_reader, to_bytes, SerializeOptions};
 use std::io::Cursor;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -93,7 +93,7 @@ fn create_all_types() -> AllTypesPly {
 fn roundtrip_ascii() {
     let original = create_test_mesh();
 
-    let bytes = to_bytes(&original, PlyFormat::Ascii, vec![]).unwrap();
+    let bytes = to_bytes(&original, SerializeOptions::ascii()).unwrap();
 
     let str = String::from_utf8(bytes.clone()).unwrap();
     println!("Output: {str}");
@@ -108,7 +108,7 @@ fn roundtrip_ascii() {
 fn roundtrip_binary_little_endian() {
     let original = create_test_mesh();
 
-    let bytes = to_bytes(&original, PlyFormat::BinaryLittleEndian, vec![]).unwrap();
+    let bytes = to_bytes(&original, SerializeOptions::binary_le()).unwrap();
     let cursor = Cursor::new(bytes);
     let parsed: Mesh = from_reader(cursor).unwrap();
 
@@ -119,7 +119,7 @@ fn roundtrip_binary_little_endian() {
 fn roundtrip_binary_big_endian() {
     let original = create_test_mesh();
 
-    let bytes = to_bytes(&original, PlyFormat::BinaryBigEndian, vec![]).unwrap();
+    let bytes = to_bytes(&original, SerializeOptions::binary_be()).unwrap();
     let cursor = Cursor::new(bytes);
     let parsed: Mesh = from_reader(cursor).unwrap();
 
@@ -130,7 +130,7 @@ fn roundtrip_binary_big_endian() {
 fn roundtrip_all_types_ascii() {
     let original = create_all_types();
 
-    let bytes = to_bytes(&original, PlyFormat::Ascii, vec![]).unwrap();
+    let bytes = to_bytes(&original, SerializeOptions::ascii()).unwrap();
     let cursor = Cursor::new(bytes);
     let parsed: AllTypesPly = from_reader(cursor).unwrap();
 
@@ -141,7 +141,7 @@ fn roundtrip_all_types_ascii() {
 fn roundtrip_all_types_binary_le() {
     let original = create_all_types();
 
-    let bytes = to_bytes(&original, PlyFormat::BinaryLittleEndian, vec![]).unwrap();
+    let bytes = to_bytes(&original, SerializeOptions::binary_le()).unwrap();
     let cursor = Cursor::new(bytes);
     let parsed: AllTypesPly = from_reader(cursor).unwrap();
 
@@ -152,7 +152,7 @@ fn roundtrip_all_types_binary_le() {
 fn roundtrip_all_types_binary_be() {
     let original = create_all_types();
 
-    let bytes = to_bytes(&original, PlyFormat::BinaryBigEndian, vec![]).unwrap();
+    let bytes = to_bytes(&original, SerializeOptions::binary_be()).unwrap();
     let cursor = Cursor::new(bytes);
     let parsed: AllTypesPly = from_reader(cursor).unwrap();
 
@@ -165,7 +165,7 @@ fn roundtrip_empty_elements() {
         vertex: vec![],
         face: vec![],
     };
-    let bytes = to_bytes(&empty_mesh, PlyFormat::Ascii, vec![]).unwrap();
+    let bytes = to_bytes(&empty_mesh, SerializeOptions::ascii()).unwrap();
     let cursor = Cursor::new(bytes);
     let parsed: Mesh = from_reader(cursor).unwrap();
     assert_eq!(empty_mesh, parsed);
@@ -177,20 +177,15 @@ struct FaceOnly {
 }
 
 #[test]
-fn roundtrip_large_list() {
-    // TODO: Atm the maximum list length is 255 as we always use u8 for list lengths
-    // In the future should add a mechanism to override this and add a test for >255 sizes.
+fn test_large_list_error() {
     let faces = FaceOnly {
         faces: vec![Face {
-            vertex_indices: (0..100).collect(),
+            vertex_indices: (0..300).collect(),
         }],
     };
 
-    let bytes = to_bytes(&faces, PlyFormat::Ascii, vec![]).unwrap();
-    let cursor = Cursor::new(bytes);
-    let parsed: FaceOnly = from_reader(cursor).unwrap();
-
-    assert_eq!(faces, parsed);
+    let err = to_bytes(&faces, SerializeOptions::ascii());
+    assert!(err.is_err());
 }
 
 #[test]
@@ -199,11 +194,8 @@ fn test_list_count_types() {
 
     #[derive(Serialize, Deserialize, Debug)]
     struct LargeListTest {
-        // Standard list (u8 count, max 255 elements)
         small_list: Vec<u32>,
-        // Medium list (u16 count, max 65535 elements)
         medium_list: ListCountU16<Vec<u32>>,
-        // Large list (u32 count, max ~4 billion elements)
         large_list: ListCountU32<Vec<u32>>,
     }
 
@@ -221,7 +213,7 @@ fn test_list_count_types() {
     };
 
     // Test ASCII format
-    let bytes = to_bytes(&test_data, PlyFormat::Ascii, vec![]).unwrap();
+    let bytes = to_bytes(&test_data, SerializeOptions::ascii()).unwrap();
     let header_str = String::from_utf8_lossy(&bytes);
 
     // Verify the header contains the correct count types
@@ -239,7 +231,7 @@ fn test_list_count_types() {
     assert_eq!(test_data.face[0].large_list.0, parsed.face[0].large_list.0);
 
     // Test binary format
-    let bytes = to_bytes(&test_data, PlyFormat::BinaryLittleEndian, vec![]).unwrap();
+    let bytes = to_bytes(&test_data, SerializeOptions::binary_le()).unwrap();
     let cursor = Cursor::new(bytes);
     let parsed: LargeListMesh = from_reader(cursor).unwrap();
     assert_eq!(test_data.face[0].small_list, parsed.face[0].small_list);
