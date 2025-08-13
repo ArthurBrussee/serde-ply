@@ -1,6 +1,6 @@
 [package]
 name = "serde-ply"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 authors = ["Arthur Brussee <arthur.brussee@gmail.com>"]
 description = "A Serde-based PLY (Polygon File Format) serializer and deserializer"
