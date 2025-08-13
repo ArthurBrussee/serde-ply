@@ -22,8 +22,6 @@ serde = { version = "1.0", features = ["derive"] }
 - Supports binary and ASCII formats
 - Supports deserializing PLY files in chunks, for streaming data processing
 - High performance (1 GB/s+ deserialization)
-- Zero-copy where possible
-- Full serde integration
 
 ## Quick Start
 
@@ -46,14 +44,12 @@ struct Mesh {
 let mesh: Mesh = serde_ply::from_reader(reader)?;
 
 // Write PLY file
-let bytes = serde_ply::to_bytes(&mesh, serde_ply::PlyFormat::Ascii, vec![])?;
+let bytes = serde_ply::to_bytes(&mesh, serde_ply::SerializeOptions::binary_le())?;
 ```
 
 ## Examples
 
-Please see the `examples/` folder for comprehensive usage examples including:
-- Basic serialization and deserialization
-- Chunked loading for large files
+Please see the `examples/` folder for usage examples.
 
 ## Contributions
 

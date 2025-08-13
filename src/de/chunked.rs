@@ -14,12 +14,11 @@ use std::{io::Cursor, marker::PhantomData};
 
 /// Streaming PLY file parser for chunked data processing.
 ///
-/// Allows parsing PLY files piece by piece as data becomes available,
-/// useful for incremental parsing. As data is fed in chunks, this is also compatible with
-/// an async reader.
+/// Processes PLY files incrementally as data becomes available, useful for
+/// streaming data or async readers. Unlike [`crate::PlyReader`], this parser
+/// can handle incomplete data and resume parsing when more bytes arrive.
 ///
-/// # Examples
-///
+/// # Example
 /// ```rust
 /// use serde::{Deserialize, de::DeserializeSeed};
 /// use serde_ply::{PlyChunkedReader, RowVisitor};
@@ -42,13 +41,14 @@ use std::{io::Cursor, marker::PhantomData};
 /// 4.0 5.0 6.0
 /// "#;
 ///
-/// for chunk in data.chunks(10) {
+/// for chunk in data.chunks(15) {
 ///     file.buffer_mut().extend_from_slice(chunk);
 ///
-///     if let Some(element) = file.current_element() {
+///     if file.current_element().is_some() {
 ///         RowVisitor::new(|v: Vertex| vertices.push(v)).deserialize(&mut file)?;
 ///     }
 /// }
+/// assert_eq!(vertices.len(), 2);
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct PlyChunkedReader {
@@ -69,20 +69,20 @@ impl PlyChunkedReader {
         }
     }
 
-    /// Get mutable access to the internal buffer for zero-copy writing.
+    /// Get mutable access to the internal buffer.
     ///
-    /// This allows any reader (including async ones) to write directly into
-    /// the buffer without copies.
+    /// Allows writing data directly into the parser's buffer without copies.
+    /// Useful for async readers or when feeding data in chunks.
     pub fn buffer_mut(&mut self) -> &mut Vec<u8> {
         &mut self.data_buffer
     }
 
     /// Get the parsed PLY header if available.
     ///
-    /// Returns `None` if there isn't enough data to complete header parsing.
+    /// Returns `None` if there isn't enough buffered data to parse the complete header.
+    /// The header is parsed lazily when first accessed.
     ///
-    /// # Examples
-    ///
+    /// # Example
     /// ```rust
     /// use serde_ply::PlyChunkedReader;
     ///
@@ -107,9 +107,10 @@ impl PlyChunkedReader {
         self.header.as_ref()
     }
 
-    /// Deserializes as many complete elements as possible from the current buffer.
+    /// Deserialize as many complete elements as possible from the current buffer.
     ///
-    /// Returns when buffer is exhausted or element boundary is reached.
+    /// Stops when the buffer is exhausted or an element boundary is reached.
+    /// Use this for batch processing of available data.
     pub fn next_chunk<T>(&mut self) -> Result<T, DeserializeError>
     where
         T: for<'de> Deserialize<'de>,
@@ -117,13 +118,12 @@ impl PlyChunkedReader {
         T::deserialize(self)
     }
 
-    /// Gets the current element definition.
+    /// Get the current element definition being processed.
     ///
     /// Returns `None` when the header isn't parsed yet, or when all elements
-    /// have been processed.
+    /// have been processed. Use this to inspect element structure before parsing.
     ///
-    /// # Examples
-    ///
+    /// # Example
     /// ```rust
     /// use serde_ply::PlyChunkedReader;
     ///
@@ -304,10 +304,10 @@ impl Default for PlyChunkedReader {
 /// Visitor for processing PLY rows one at a time.
 ///
 /// Provides a callback-based interface for processing PLY elements
-/// without collecting them into intermediate collections.
+/// without collecting them into intermediate collections. Useful for
+/// streaming processing or when memory usage is a concern.
 ///
-/// # Examples
-///
+/// # Example
 /// ```rust
 /// use serde::{Deserialize, de::DeserializeSeed};
 /// use serde_ply::{PlyChunkedReader, RowVisitor};
@@ -316,13 +316,15 @@ impl Default for PlyChunkedReader {
 /// struct Vertex { x: f32, y: f32, z: f32 }
 ///
 /// let mut file = PlyChunkedReader::new();
-/// let mut count = 0;
+/// file.buffer_mut().extend_from_slice(
+///     b"ply\nformat ascii 1.0\nelement vertex 1\nproperty float x\nproperty float y\nproperty float z\nend_header\n1.0 2.0 3.0\n"
+/// );
 ///
-/// // Process each vertex as it's parsed
-/// RowVisitor::new(|vertex: Vertex| {
+/// let mut count = 0;
+/// RowVisitor::new(|_vertex: Vertex| {
 ///     count += 1;
-///     println!("Vertex {}: ({}, {}, {})", count, vertex.x, vertex.y, vertex.z);
 /// }).deserialize(&mut file)?;
+/// assert_eq!(count, 1);
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct RowVisitor<T, F: FnMut(T)> {
@@ -333,7 +335,8 @@ pub struct RowVisitor<T, F: FnMut(T)> {
 impl<T, F: FnMut(T)> RowVisitor<T, F> {
     /// Create a new row visitor with the given callback.
     ///
-    /// The callback will be called for each successfully parsed row.
+    /// The callback is invoked for each successfully parsed row.
+    /// Call [`serde::de::DeserializeSeed::deserialize`] to start processing.
     #[must_use = "Please call deserialize(&mut file) to actually deserialize data"]
     pub fn new(row_callback: F) -> Self {
         Self {

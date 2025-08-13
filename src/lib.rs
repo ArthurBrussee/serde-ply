@@ -1,4 +1,42 @@
 //! Serde-based PLY file format serialization and deserialization.
+//!
+//! This crate provides fast, flexible PLY file parsing and writing using serde.
+//! It supports both ASCII and binary formats, streaming/chunked processing,
+//! and the full PLY specification including list properties.
+//!
+//! # Quick Start
+//!
+//! ```rust
+//! use serde::{Deserialize, Serialize};
+//! use serde_ply::{from_str, to_string, SerializeOptions};
+//!
+//! #[derive(Deserialize, Serialize)]
+//! struct Vertex {
+//!     x: f32,
+//!     y: f32,
+//!     z: f32,
+//! }
+//!
+//! #[derive(Deserialize, Serialize)]
+//! struct Mesh {
+//!     vertex: Vec<Vertex>,
+//! }
+//!
+//! let ply_text = r#"ply
+//! format ascii 1.0
+//! element vertex 2
+//! property float x
+//! property float y
+//! property float z
+//! end_header
+//! 0.0 0.0 0.0
+//! 1.0 1.0 1.0
+//! "#;
+//!
+//! let mesh: Mesh = from_str(ply_text)?;
+//! let output = to_string(&mesh, SerializeOptions::ascii())?;
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
 
 mod de;
 mod error;
@@ -18,6 +56,8 @@ use std::fmt::{self, Display};
 use std::str::FromStr;
 
 /// PLY file format encoding.
+///
+/// Determines how data is stored in the PLY file - as text or binary with specific byte ordering.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PlyFormat {
     /// Plain text format
@@ -38,7 +78,10 @@ impl fmt::Display for PlyFormat {
     }
 }
 
-/// Scalar data type.
+/// Scalar data type used in PLY properties.
+///
+/// Maps PLY type names to Rust types. PLY supports both canonical names
+/// (like `float32`) and legacy aliases (like `float`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ScalarType {
     I8,
@@ -95,7 +138,8 @@ impl Display for ScalarType {
 
 /// PLY property type definition.
 ///
-/// Either a scalar or a list.
+/// Properties can be either single scalar values or variable-length lists.
+/// Lists store a count followed by that many data elements.
 #[derive(Debug, Clone)]
 pub enum PropertyType {
     /// Single scalar value
@@ -107,16 +151,19 @@ pub enum PropertyType {
     },
 }
 
-/// A definition of a single property
+/// Definition of a single property within a PLY element.
 ///
-/// This is either a scalar or a list, see [`PropertyType`].
+/// Contains the property name and its type (scalar or list).
 #[derive(Debug, Clone)]
 pub struct PlyProperty {
     pub name: String,
     pub property_type: PropertyType,
 }
 
-/// Definition of one element with a list of the row properties.
+/// Definition of a PLY element type.
+///
+/// Elements define the structure of data rows in a PLY file. Common examples
+/// are "vertex" and "face" elements. Each element has a count and list of properties.
 #[derive(Debug, Clone)]
 pub struct ElementDef {
     pub name: String,
@@ -137,6 +184,9 @@ impl ElementDef {
 }
 
 /// PLY file header containing format, elements, and metadata.
+///
+/// The header defines the structure of the entire PLY file including
+/// data format, element definitions, and optional comments.
 #[derive(Debug, Clone)]
 pub struct PlyHeader {
     pub format: PlyFormat,
@@ -296,27 +346,50 @@ impl PlyHeader {
     }
 
     /// Find an element definition by name.
-    ///
-    /// Returns a reference to the element definition if found, otherwise None.
     pub fn get_element(&self, name: &str) -> Option<ElementDef> {
         self.elem_defs.iter().find(|e| e.name == name).cloned()
     }
 
-    /// Check if header has an element with the given name.
+    /// Check if the header contains an element with the given name.
     pub fn has_element(&self, name: &str) -> bool {
         self.elem_defs.iter().any(|e| e.name == name)
     }
 }
 
-/// Mark PLY list to be serialzied with `u16` as its count type.
+/// Wrapper to serialize PLY lists with `u16` count type.
 ///
-/// Indicates this ply list should be serialized with a u16 (default u8) count.
+/// By default, PLY lists use `u8` for the element count. Use this wrapper
+/// when you need larger counts.
+///
+/// # Example
+/// ```rust
+/// use serde::{Serialize, Deserialize};
+/// use serde_ply::ListCountU16;
+///
+/// #[derive(Serialize, Deserialize)]
+/// struct Face {
+///     // This list can have up to 65535 vertices
+///     vertex_indices: ListCountU16<Vec<u32>>,
+/// }
+/// ```
 #[derive(Debug)]
 pub struct ListCountU16<T>(pub T);
 
-/// Mark PLY list to be serialized with `u32` as its count type.
+/// Wrapper to serialize PLY lists with `u32` count type.
 ///
-/// Indicates this ply list should be serialized with a u16 (default u8) count.
+/// Use this wrapper when you need very large element counts in lists.
+///
+/// # Example
+/// ```rust
+/// use serde::{Serialize, Deserialize};
+/// use serde_ply::ListCountU32;
+///
+/// #[derive(Serialize, Deserialize)]
+/// struct LargeFace {
+///     // This list can have up to 4 billion vertices
+///     vertex_indices: ListCountU32<Vec<u32>>,
+/// }
+/// ```
 #[derive(Debug)]
 pub struct ListCountU32<T>(pub T);
 
