@@ -81,6 +81,24 @@ end_header
 }
 
 #[test]
+fn test_parse_rn() {
+    let ply_data = "ply\r\nformat ascii 1.0\r\nelement vertex 1\r\nproperty float x\r\nproperty float y\r\nproperty float z\r\nend_header\r\n0 0 1\r\n";
+    let mut reader = PlyReader::from_reader(Cursor::new(ply_data)).unwrap();
+    assert_eq!(reader.header().format, PlyFormat::Ascii);
+    assert_eq!(reader.header().elem_defs.len(), 1);
+    let vertices: Vec<Vertex> = reader.next_element().unwrap();
+    assert_eq!(vertices.len(), 1);
+    assert_eq!(
+        vertices[0],
+        Vertex {
+            x: 0.0,
+            y: 0.0,
+            z: 1.0
+        }
+    );
+}
+
+#[test]
 fn test_ascii_incomplete() {
     let ply_data = r#"ply
 format ascii 1.0

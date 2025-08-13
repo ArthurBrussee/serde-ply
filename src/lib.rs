@@ -222,7 +222,10 @@ impl PlyHeader {
                 )));
             }
 
-            if line == "end_header\n" {
+            // We have reached the end of the header. Don't really care
+            // about whitespace here, BUT we do have to be sure that the newline IS present.
+            // If its not, the line ends at EOF, and the next chunk of data could then incorrectly contain this newline.
+            if line.trim() == "end_header" && line.ends_with("\n") {
                 break;
             }
             let parts: Vec<&str> = line.split_whitespace().collect();
